@@ -228,10 +228,9 @@ exploitable details.
 This project is licensed under the [MIT License](LICENSE).
 
 ## Roadmap
-
-The most important next steps are to share one state manager, fix the polling
-configuration lookup, add atomic state persistence and bounded retries, make
-provider operations idempotent, and add mocked unit tests. Longer-term
+The most important next steps are to add atomic state persistence and bounded
+retries, make provider operations idempotent,and add mocked adapter tests. Longer-term
 possibilities include webhooks, CI-aware verification, per-repository policy,
-concurrency controls, and an operator API. The complete review is in
-[`todo.md`](todo.md).
+concurrency controls,and an operator API. The complete review is in
+[`todo.md`](todo.md.)
+

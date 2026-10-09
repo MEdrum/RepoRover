@@ -34,7 +34,7 @@ impact.
   every five seconds. Some error paths set state but `process_queue()` only
   saves when at least one workflow succeeds, so failure state can be lost on
   restart.
-- [ ] **Use the repository's actual default branch (P1).** `WorkflowState`
+- [x] **Use the repository's actual default branch (P1).** `WorkflowState`
   defaults `base_branch` to `"main"` and `_phase_new` passes it to branch
   creation. Repositories whose default branch is `master`, `develop`, or
   another name will fail or create the branch from the wrong base. Fetch the

@@ -119,6 +119,10 @@ class WorkflowManager:
         try:
             owner, repo = workflow.repository.split("/", 1)
             
+            # Resolve the repository's actual default branch
+            repository = await provider.get_repository(owner, repo)
+            workflow.base_branch = repository.default_branch or workflow.base_branch
+            
             # Add in_progress label, remove eligible label
             await provider.add_label(owner, repo, workflow.issue_number, in_progress_label)
             await provider.remove_label(owner, repo, workflow.issue_number, eligible_label)
