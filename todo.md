@@ -28,7 +28,7 @@ impact.
   comment. A crash or transient API failure can leave a branch/PR behind while
   the workflow retries the create operation and fails with a conflict or
   duplicate resource.
-- [ ] **Persist and bound failures/retries (P1).** `retry_count`, `last_error`,
+- [x] **Persist and bound failures/retries (P1).** `retry_count`, `last_error`,
   and the configured retry settings are not used to control phase retries.
   Most phase failures leave the workflow in the same phase and the loop retries
   every five seconds. Some error paths set state but `process_queue()` only

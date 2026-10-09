@@ -46,6 +46,7 @@ class WorkflowState:
     stuck_reason: str = ""
     retry_count: int = 0
     last_error: str = ""
+    retry_at: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:

@@ -1,9 +1,17 @@
 """Tests for workflow phase processing."""
 
 import asyncio
+from datetime import UTC, datetime
 from unittest import mock
 
-from git_provider import Branch, Issue, NotFoundError, PullRequest, Repository
+from git_provider import (
+    Branch,
+    Issue,
+    NotFoundError,
+    ProviderError,
+    PullRequest,
+    Repository,
+)
 from orchestrator.config import OrchestratorConfig
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow import WorkflowManager
@@ -137,3 +145,61 @@ class TestIdempotentSideEffects:
         assert result.success
         assert workflow.phase == WorkflowPhase.COMPLETED
         assert provider.created_pull_requests == []  # create_pull_request was not called
+
+
+class FailingProvider:
+    """Provider whose repository lookup always fails."""
+
+    async def get_repository(self, owner, repo):
+        raise ProviderError("boom")
+
+
+class TestBoundedRetries:
+    def test_phase_failure_increments_retry_and_schedules_backoff(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FailingProvider()
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW)
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            processed = asyncio.run(manager.process_queue())
+        assert processed == 0
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf is not None
+        assert wf.retry_count == 1
+        assert wf.last_error
+        assert wf.retry_at
+        assert wf.retry_at > datetime.now(UTC).isoformat()
+
+    def test_phase_failure_marks_workflow_failed_after_max_attempts(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FailingProvider()
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW, retry_count=2, retry_at="")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            processed = asyncio.run(manager.process_queue())
+        assert processed == 0
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.retry_count == 3
+        assert wf.phase == WorkflowPhase.FAILED
+        assert "Exceeded" in wf.last_error
+        assert wf.retry_at == ""
+
+    def test_retry_delay_follows_exponential_backoff(self, tmp_path):
+        manager = _manager(tmp_path)
+        assert manager._retry_delay(1) == 2
+        assert manager._retry_delay(2) == 4
+        assert manager._retry_delay(6) == 60
+
+    def test_phase_success_resets_retry_state(self, tmp_path):
+        manager = _manager(tmp_path)
+        workflow = WorkflowState(
+            issue_number=1, repository="owner/repo", project="repo",
+            phase=WorkflowPhase.STUCK, retry_count=2, last_error="boom", retry_at="",
+        )
+        manager.state.set_workflow(workflow)
+        processed = asyncio.run(manager.process_queue())
+        assert processed == 1
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.retry_count == 0
+        assert wf.last_error == ""
+        assert wf.retry_at == ""

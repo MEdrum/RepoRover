@@ -5,13 +5,13 @@ Manages the workflow state machine for issue processing.
 """
 
 import logging
-from typing import Optional, List
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
+from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
-from orchestrator.state import OrchestratorState, WorkflowState, WorkflowPhase
 from orchestrator.opencode import OpenCodeClient, OpenCodeTask
-from git_provider import GitProvider, ProviderError, NotFoundError
+from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class WorkflowResult:
     """Result of workflow processing."""
     success: bool
-    next_phase: Optional[WorkflowPhase] = None
+    next_phase: WorkflowPhase | None = None
     error: str = ""
     metadata: dict = None
 
@@ -32,12 +32,12 @@ class WorkflowManager:
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
-        self._provider: Optional[GitProvider] = None
+        self._provider: GitProvider | None = None
     
     async def _get_provider(self) -> GitProvider:
         """Get or create Git provider."""
         if self._provider is None:
-            from git_provider import create_provider, ProviderType
+            from git_provider import ProviderType, create_provider
             provider_type = ProviderType.GITHUB if self.config.git_provider.provider in ("github", "both") else ProviderType.GITLAB
             provider_config = {}
             
@@ -61,24 +61,53 @@ class WorkflowManager:
         """Process all active workflows."""
         active_workflows = self.state.list_active_workflows()
         processed = 0
+        changed = False
+        now = datetime.now(UTC).isoformat()
         
         for workflow in active_workflows:
+            if workflow.retry_at and workflow.retry_at > now:
+                continue
             try:
                 result = await self._process_workflow(workflow)
                 if result.success:
                     processed += 1
+                    workflow.retry_count = 0
+                    workflow.last_error = ""
+                    workflow.retry_at = ""
+                    self.state.set_workflow(workflow)
+                    changed = True
                 elif result.error:
                     logger.error(f"Workflow {workflow.repository}#{workflow.issue_number} failed: {result.error}")
+                    self._record_failure(workflow, result.error)
+                    changed = True
             except Exception as e:
                 logger.error(f"Error processing workflow {workflow.repository}#{workflow.issue_number}: {e}")
-                workflow.phase = WorkflowPhase.FAILED
-                workflow.last_error = str(e)
-                self.state.set_workflow(workflow)
+                self._record_failure(workflow, str(e))
+                changed = True
         
-        if processed > 0:
+        if changed:
             await self.state.save()
         
         return processed
+    
+    def _record_failure(self, workflow: WorkflowState, error: str) -> None:
+        """Record a phase failure and apply the retry/backoff policy."""
+        workflow.retry_count += 1
+        workflow.last_error = error
+        if workflow.retry_count >= self.config.retry.max_attempts:
+            workflow.phase = WorkflowPhase.FAILED
+            workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: {error}"
+            workflow.retry_at = ""
+        else:
+            delay = self._retry_delay(workflow.retry_count)
+            workflow.retry_at = (datetime.now(UTC) + timedelta(seconds=delay)).isoformat()
+        self.state.set_workflow(workflow)
+    
+    def _retry_delay(self, retry_count: int) -> int:
+        """Exponential backoff delay for the next retry."""
+        cfg = self.config.retry
+        delay = cfg.base_delay_seconds * (cfg.exponential_base ** (retry_count - 1))
+        return min(delay, cfg.max_delay_seconds)
     
     async def _process_workflow(self, workflow: WorkflowState) -> WorkflowResult:
         """Process a single workflow based on its current phase."""

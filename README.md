@@ -126,6 +126,12 @@ polling:
   interval_seconds: 60
   max_issues_per_poll: 50
 
+retry:
+  max_attempts: 3
+  base_delay_seconds: 2
+  max_delay_seconds:  ​60
+  exponential_base:​ 2
+
 opencode:
   api_url: http://opencode:8080
   timeout: 300
