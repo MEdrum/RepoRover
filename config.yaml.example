@@ -1,0 +1,66 @@
+# Git Provider Configuration
+# Copy this to config.yaml and fill in your credentials
+
+# Provider selection: "github", "gitlab", or "both"
+provider: "github"
+
+# GitHub Configuration
+github:
+  token: ""  # Personal access token or fine-grained token
+  base_url: "https://api.github.com"  # For GitHub Enterprise
+  # Required permissions:
+  # - repo (read/write)
+  # - issues (read/write)
+  # - pull_requests (read/write)
+  # - contents (read)
+  # - metadata (read)
+
+# GitLab Configuration
+gitlab:
+  token: ""  # Personal access token
+  url: "https://gitlab.com"  # For self-hosted GitLab
+  # Required permissions:
+  # - api (read/write)
+  # - read_repository
+  # - write_repository
+
+# Label Configuration
+labels:
+  eligible: "agent"           # Issues with this label are eligible for autonomous work
+  in_progress: "doing"        # Work is currently active
+  stuck: "stuck"              # Human input required
+  awaiting_review: "awaiting review"  # Ready for human review
+
+# Repository Configuration
+repositories:
+  # List of repositories to monitor (owner/repo format)
+  # Empty means all accessible repositories
+  - "owner/repo1"
+  # - "owner/repo2"
+
+# Rate Limiting
+rate_limit:
+  github:
+    requests_per_hour: 5000
+    buffer: 100  # Keep this many requests in reserve
+  gitlab:
+    requests_per_minute: 600
+    buffer: 50
+
+# Polling Configuration
+polling:
+  interval_seconds: 60  # How often to check for new eligible issues
+  max_issues_per_poll: 50
+
+# Retry Configuration
+retry:
+  max_attempts: 3
+  base_delay_seconds: 2
+  max_delay_seconds: 60
+  exponential_base: 2
+
+# Webhook Configuration (optional)
+webhook:
+  enabled: false
+  secret: ""  # Webhook secret for verification
+  url: ""     # Public URL for webhook delivery

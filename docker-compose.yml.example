@@ -1,0 +1,46 @@
+services:
+  agent-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-orchestrator
+    hostname: agent-orchestrator
+    restart: unless-stopped
+    networks:
+      - agent-internal
+      - agent-llm
+    volumes:
+      - /home/fabian/docker/storage/agent-orchestrator:/data:rw
+      - /home/fabian/docker/services/agent-orchestrator/config.yaml:/app/config.yaml:ro
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITLAB_TOKEN=${GITLAB_TOKEN}
+      - LOG_LEVEL=INFO
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 50
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    read_only: false
+    tmpfs:
+      - /tmp:noexec,nosuid,size=256m
+      - /var/tmp:noexec,nosuid,size=256m
+
+networks:
+  agent-internal:
+    external: true
+  agent-llm:
+    external: true
