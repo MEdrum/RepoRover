@@ -22,7 +22,7 @@ impact.
   discovered or processed in that mode. Either run separate provider adapters
   and route repositories explicitly, or validate the configuration and reject
   the unsupported value.
-- [ ] **Make workflow side effects idempotent (P1).** `_phase_new` persists the
+- [x] **Make workflow side effects idempotent (P1).** `_phase_new` persists the
   branch and phase before its initial comment completes, and
   `_phase_awaiting_review` creates the PR/MR before labels and the final
   comment. A crash or transient API failure can leave a branch/PR behind while

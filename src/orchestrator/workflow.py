@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from orchestrator.config import OrchestratorConfig
 from orchestrator.state import OrchestratorState, WorkflowState, WorkflowPhase
 from orchestrator.opencode import OpenCodeClient, OpenCodeTask
-from git_provider import GitProvider, ProviderError
+from git_provider import GitProvider, ProviderError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,31 @@ class WorkflowManager:
             logger.error(f"Unexpected error in workflow {workflow.repository}#{workflow.issue_number}: {e}")
             return WorkflowResult(success=False, error=str(e))
     
+    async def _ensure_branch(self, provider: GitProvider, owner: str, repo: str, branch: str, base: str) -> None:
+        """Create a branch only if it does not already exist (idempotent."""
+        try:
+            await provider.get_branch(owner, repo, branch)
+        except NotFoundError:
+            await provider.create_branch(owner, repo, branch, base)
+        else:
+            logger.info(f"Branch {branch} already exists, reusing")
+
+    async def _ensure_pull_request(self, provider: GitProvider, owner: str, repo: str, title: str, body: str, head: str, base: str):
+        """Find or create a PR/MR for the head branch (idempotent."""
+        existing = await provider.list_pull_requests(owner, repo, state="open", head=head)
+        for pr in existing:
+            if pr.head_branch == head and pr.base_branch == base:
+                logger.info(f"PR/MR for {head} already exists, reusing")
+                return pr
+        return await provider.create_pull_request(
+            owner=owner,
+            repo=repo,
+            title=title,
+            body=body,
+            head=head,
+            base=base
+        )
+
     async def _phase_new(self, workflow: WorkflowState) -> WorkflowResult:
         """Initialize new workflow."""
         provider = await self._get_provider()
@@ -130,9 +155,9 @@ class WorkflowManager:
             # Get issue details
             issue = await provider.get_issue(owner, repo, workflow.issue_number)
             
-            # Create feature branch
+            # Create feature branch (idempotently; reuse an existing branch on retry)
             branch_name = f"agent/{workflow.issue_number}-{self._slugify(issue.title)}"
-            await provider.create_branch(owner, repo, branch_name, workflow.base_branch)
+            await self._ensure_branch(provider, owner, repo, branch_name, workflow.base_branch)
             
             workflow.branch = branch_name
             workflow.phase = WorkflowPhase.PLANNING
@@ -357,7 +382,9 @@ class WorkflowManager:
             pr_title = f"Fix: {issue.title}"
             pr_body = f"Closes #{workflow.issue_number}\n\n## Summary\n\n{workflow.plan}\n\n## Verification\n\n{workflow.verification_plan}"
             
-            pr = await provider.create_pull_request(
+            # Create PR/MR (idempotently; reuse an existing one for the head branch)
+            pr = await self._ensure_pull_request(
+                provider=provider,
                 owner=owner,
                 repo=repo,
                 title=pr_title,
