@@ -27,9 +27,9 @@ class DiscoveredIssue:
 class IssueDiscovery:
     """Discovers and queues eligible issues."""
     
-    def __init__(self, config: OrchestratorConfig):
+    def __init__(self, config: OrchestratorConfig, state: OrchestratorState):
         self.config = config
-        self.state = OrchestratorState(config.state.state_dir)
+        self.state = state
         self._provider: Optional[GitProvider] = None
     
     async def _get_provider(self) -> GitProvider:
@@ -85,16 +85,11 @@ class IssueDiscovery:
                 
                 for issue in issues:
                     # Check if already in progress or stuck
-                    workflow_key = self.state.get_workflow_key(repo_spec, issue.number)
                     existing = self.state.get_workflow(repo_spec, issue.number)
                     
                     if existing:
-                        if existing.phase in (WorkflowPhase.STUCK, WorkflowPhase.AWAITING_REVIEW):
-                            logger.info(f"Issue {repo_spec}#{issue.number} is {existing.phase.value}, skipping")
-                            continue
-                        elif existing.phase != WorkflowPhase.NEW:
-                            logger.info(f"Issue {repo_spec}#{issue.number} already in phase {existing.phase.value}, skipping")
-                            continue
+                        logger.info(f"Issue {repo_spec}#{issue.number} already in phase {existing.phase.value}, skipping")
+                        continue
                     
                     # Check if issue has in_progress or stuck label (another instance might be working on it)
                     if in_progress_label in issue.labels or stuck_label in issue.labels or awaiting_review_label in issue.labels:

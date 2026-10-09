@@ -29,7 +29,7 @@ class IssueOrchestrator:
     def __init__(self, config: OrchestratorConfig):
         self.config = config
         self.state = OrchestratorState(config.state.state_dir)
-        self.discovery = IssueDiscovery(config)
+        self.discovery = IssueDiscovery(config, self.state)
         self.workflow = WorkflowManager(config, self.state)
         self.opencode = OpenCodeClient(config)
         self._running = False

@@ -6,8 +6,8 @@ impact.
 
 ## Confirmed bugs and blockers
 
-- [ ] **Use one shared state manager for discovery and workflow processing
-  (P0).** [`IssueOrchestrator`](src/orchestrator/main.py) creates one
+- [x] **Use one shared state manager for discovery and workflow processing
+   (P0).** [`IssueOrchestrator`](src/orchestrator/main.py) creates one
   `OrchestratorState`, while [`IssueDiscovery`](src/orchestrator/discovery.py)
   creates another. Discovery writes newly queued workflows to its private
   instance, but [`WorkflowManager`](src/orchestrator/workflow.py) reads the

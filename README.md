@@ -22,8 +22,7 @@ open a pull request or merge request for human review.
 
 > **Status:** This repository is an early implementation. It compiles, but it
 > is not currently production-ready. See [`todo.md`](todo.md) for the review.
-> In particular, the discovery and workflow loops currently do not share state,
-> and the polling loop references an invalid configuration attribute.
+> In particular, the polling loop references an invalid configuration attribute.
 
 ## Quick start
 
