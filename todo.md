@@ -13,7 +13,7 @@ impact.
   instance, but [`WorkflowManager`](src/orchestrator/workflow.py) reads the
   main instance. As a result, discovered issues are not processed by the
   workflow loop, and every discovery poll can queue the same issue again.
-- [ ] **Fix the polling interval lookup (P0).** [`main.py`](src/orchestrator/main.py)
+- [x] **Fix the polling interval lookup (P0).** [`main.py`](src/orchestrator/main.py)
   reads `self.config.polling_interval`, but the attribute lives at
   `self.config.git_provider.polling_interval`. The discovery loop raises
   `AttributeError` after its first poll and never sleeps/repeats normally.

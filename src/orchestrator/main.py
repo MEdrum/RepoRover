@@ -80,7 +80,7 @@ class IssueOrchestrator:
                 logger.error(f"Discovery error: {e}")
             
             # Wait for next poll interval
-            await asyncio.sleep(self.config.polling_interval)
+            await asyncio.sleep(self.config.git_provider.polling_interval)
     
     async def _workflow_loop(self):
         """Process queued workflows."""
