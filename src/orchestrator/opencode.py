@@ -68,8 +68,52 @@ class OpenCodeClient:
             await self._client.aclose()
             self._client = None
     
+    def _parse_result(self, response: httpx.Response, run_id: str) -> OpenCodeResult:
+        """Parse and validate a task response body.
+
+        The contract is synchronous: the response body must contain an explicit
+        boolean `success` flag (plus optional output/error/metadata). A missing or
+        invalid `success` is treated as a malformed response, never as success.
+"""
+        try:
+            data = response.json()
+        except ValueError:
+            return OpenCodeResult(
+                success=False,
+                error=f"Malformed OpenCode response (not JSON): {response.text}",
+                run_id=run_id
+            )
+        if not isinstance(data, dict):
+            return OpenCodeResult(
+                success=False,
+                error=f"Malformed OpenCode response: expected JSON object, got {type(data).__name__}",
+                run_id=run_id
+            )
+        success = data.get("success")
+        if not isinstance(success, bool):
+            return OpenCodeResult(
+                success=False,
+                error="Malformed OpenCode response: missing or invalid boolean 'success' field",
+                run_id=run_id
+            )
+        output = data.get("output", "")
+        error = data.get("error", "")
+        metadata = data.get("metadata", {})
+        return OpenCodeResult(
+            success=success,
+            output=output if isinstance(output, str) else "",
+            error=error if isinstance(error, str) else "",
+            run_id=run_id,
+            metadata=metadata if isinstance(metadata, dict) else {}
+        )
+    
     async def run_task(self, task: OpenCodeTask) -> OpenCodeResult:
-        """Run a task via OpenCode."""
+        """Run a task via OpenCode.
+
+        The task API is treated as synchronous: a 200/201/202 response
+        carries the completed task result, which must include an explicit
+        boolean `success`. Non-2xx statuses or malformed bodies are failures.
+"""
         logger.info(f"Running OpenCode task {task.run_id} for {task.repository}#{task.issue_number} [{task.phase}]")
         
         try:
@@ -99,15 +143,8 @@ class OpenCodeClient:
                 headers={"Content-Type": "application/json"}
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                return OpenCodeResult(
-                    success=data.get("success", True),
-                    output=data.get("output", ""),
-                    error=data.get("error", ""),
-                    run_id=task.run_id,
-                    metadata=data.get("metadata", {})
-                )
+            if response.status_code in (200, 201, 202):
+                return self._parse_result(response, task.run_id)
             else:
                 error_text = response.text
                 logger.error(f"OpenCode API error {response.status_code}: {error_text}")
@@ -145,15 +182,8 @@ class OpenCodeClient:
             client = await self._get_client()
             response = await client.get(f"/api/v1/tasks/{run_id}")
             
-            if response.status_code == 200:
-                data = response.json()
-                return OpenCodeResult(
-                    success=data.get("success", True),
-                    output=data.get("output", ""),
-                    error=data.get("error", ""),
-                    run_id=run_id,
-                    metadata=data.get("metadata", {})
-                )
+            if response.status_code in (200, 201, 202):
+                return self._parse_result(response, run_id)
             elif response.status_code == 404:
                 return None
             else:

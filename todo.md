@@ -47,7 +47,7 @@ impact.
   does not close its OpenCode client, and `WorkflowManager` owns a second
   OpenCode client that is also never closed. Add lifecycle ownership and close
   both clients.
-- [ ] **Handle provider/API response contracts explicitly (P2).**
+- [x] **Handle provider/API response contracts explicitly (P2).**
   `OpenCodeClient.run_task()` accepts only HTTP 200, although task creation
   commonly returns 201 or 202, and it defaults missing `success` to `True`.
   Validate the response schema and explicitly support the intended synchronous
