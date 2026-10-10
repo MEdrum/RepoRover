@@ -80,7 +80,9 @@ eligible issue
 
 `STUCK` and `FAILED` are also represented in the state model. On startup the
 orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
-against the persisted state. The current implementation does not yet provide
+against the persisted state. OpenCode tasks that report an in-flight status are
+recorded by their run id and polled on subsequent passes instead of being
+re-submitted or marked failed. The current implementation does not yet provide
 CI polling or merge tracking.
 
 ## Architecture

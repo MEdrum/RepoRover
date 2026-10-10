@@ -13,6 +13,7 @@ from git_provider import (
     Repository,
 )
 from orchestrator.config import OrchestratorConfig
+from orchestrator.opencode import OpenCodeResult
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow import WorkflowManager
 
@@ -203,3 +204,66 @@ class TestBoundedRetries:
         assert wf.retry_count == 0
         assert wf.last_error == ""
         assert wf.retry_at == ""
+
+
+class FakeOpenCode:
+    def __init__(self, status_results=None, run_results=None):
+        self.status_results = list(status_results or [])
+        self.run_results = list(run_results or [])
+        self.run_calls = 0
+        self.status_calls = 0
+
+    async def run_task(self, task):
+        self.run_calls += 1
+        if self.run_results:
+            return self.run_results.pop(0)
+        return OpenCodeResult(success=True, output="plan")
+
+    async def get_task_status(self, run_id):
+        self.status_calls += 1
+        if self.status_results:
+            return self.status_results.pop(0)
+        return None
+
+
+class TestOpenCodeTaskPolling:
+    def test_pending_task_persists_run_id_without_failure(self, tmp_path):
+        manager = _manager(tmp_path)
+        manager.opencode = FakeOpenCode(run_results=[OpenCodeResult(success=True, pending=True, run_id="abc")])
+        provider = FakeProvider()
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            processed = asyncio.run(manager.process_queue())
+        assert processed == 0
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.opencode_run_id == "abc"
+        assert wf.phase == WorkflowPhase.PLANNING
+        assert wf.retry_count == 0
+
+    def test_polls_stored_run_id_and_advances_on_completion(self, tmp_path):
+        manager = _manager(tmp_path)
+        manager.opencode = FakeOpenCode(status_results=[OpenCodeResult(success=True, output="A plan", run_id="abc")])
+        provider = FakeProvider()
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_run_id="abc")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager._phase_planning(workflow))
+        assert result.success
+        assert workflow.plan == "A plan"
+        assert workflow.phase == WorkflowPhase.VERIFICATION_DESIGN
+        assert workflow.opencode_run_id == ""
+
+    def test_missing_status_reruns_task(self, tmp_path):
+        manager = _manager(tmp_path)
+        manager.opencode = FakeOpenCode(status_results=[None], run_results=[OpenCodeResult(success=True, output="B plan", run_id="xyz")])
+        provider = FakeProvider()
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_run_id="abc")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager._phase_planning(workflow))
+        assert result.success
+        assert workflow.plan == "B plan"
+        assert workflow.opencode_run_id == ""
+        assert manager.opencode.status_calls == 1
+        assert manager.opencode.run_calls == 1

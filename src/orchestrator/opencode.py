@@ -41,6 +41,7 @@ class OpenCodeResult:
     error: str = ""
     run_id: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    pending: bool = False
 
 
 class OpenCodeClient:
@@ -95,6 +96,13 @@ class OpenCodeClient:
                 success=False,
                 error="Malformed OpenCode response: missing or invalid boolean 'success' field",
                 run_id=run_id
+            )
+        if str(data.get("status", "")).lower() in ("queued", "running", "accepted", "pending"):
+            return OpenCodeResult(
+                success=True,
+                pending=True,
+                run_id=data.get("run_id") or run_id,
+                metadata=data.get("metadata", {}) if isinstance(data.get("metadata", {}), dict) else {},
             )
         output = data.get("output", "")
         error = data.get("error", "")

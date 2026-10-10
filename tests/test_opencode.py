@@ -112,3 +112,13 @@ class TestGetTaskStatusResponseContract:
         result = _status(client, FakeResponse(200, {"output": "x"}))
         assert result is not None
         assert result.success is False
+
+
+class TestPendingStatus:
+    def test_pending_statuses_are_marked_pending(self):
+        client = OpenCodeClient(OrchestratorConfig())
+        for status in ("queued", "running", "accepted", "pending"):
+            result = _run(client, FakeResponse(201, {"success": True, "status": status, "run_id": "r1"}))
+            assert result.pending
+            assert result.success
+            assert result.run_id == "r1"

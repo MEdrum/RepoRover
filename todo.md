@@ -52,7 +52,7 @@ impact.
   commonly returns 201 or 202, and it defaults missing `success` to `True`.
   Validate the response schema and explicitly support the intended synchronous
   or asynchronous contract.
-- [ ] **Do not treat a missing OpenCode task as a completed failure forever
+- [x] **Do not treat a missing OpenCode task as a completed failure forever
   (P2).** `get_task_status()` returns `None` for 404 and all exceptions, but
   `opencode_run_id` is never stored or polled by the workflow. Long-running or
   asynchronous tasks therefore cannot be recovered or observed.
