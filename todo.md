@@ -69,10 +69,10 @@ impact.
 - [ ] Avoid broad exception handling that converts malformed state, malformed
   API payloads, and programming errors into silent retries or generic
   `FAILED` states. Preserve exception categories and include structured context.
-- [ ] Make state writes atomic (`temporary file` + `os.replace`) and protect
+- [x] Make state writes atomic (`temporary file` + `os.replace`) and protect
   concurrent reads/writes. A process interruption during `workflows.json`
   writing can destroy all durable workflow state.
-- [ ] Bound or rotate `history.jsonl`. `StateConfig.max_history` is never used,
+- [x] Bound or rotate `history.jsonl`. `StateConfig.max_history` is never used,
   and `OrchestratorState` loads the complete history into memory.
 - [ ] Avoid duplicate API calls in the GitHub adapter, notably resolving the
   repository and labels repeatedly in `list_issues()`. Add pagination and
@@ -98,7 +98,7 @@ impact.
 ## Unclean or incomplete implementation
 
 - [ ] Remove unused imports and duplicated provider/client construction.
-- [ ] Use timezone-aware UTC timestamps instead of deprecated naive
+- [x] Use timezone-aware UTC timestamps instead of deprecated naive
   `datetime.utcnow()`.
 - [ ] Replace magic values (`5` second workflow delay, `5000` GitHub limit,
   `/app/config.yaml`) with validated configuration or constants.

@@ -169,12 +169,12 @@ class TestBoundedRetries:
         assert wf.retry_count == 1
         assert wf.last_error
         assert wf.retry_at
-        assert wf.retry_at > datetime.now(UTC).isoformat()
+        assert wf.retry_at > datetime.now(UTC)
 
     def test_phase_failure_marks_workflow_failed_after_max_attempts(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FailingProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW, retry_count=2, retry_at="")
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW, retry_count=2, retry_at=None)
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             processed = asyncio.run(manager.process_queue())
@@ -183,7 +183,7 @@ class TestBoundedRetries:
         assert wf.retry_count == 3
         assert wf.phase == WorkflowPhase.FAILED
         assert "Exceeded" in wf.last_error
-        assert wf.retry_at == ""
+        assert wf.retry_at is None
 
     def test_retry_delay_follows_exponential_backoff(self, tmp_path):
         manager = _manager(tmp_path)
@@ -195,7 +195,7 @@ class TestBoundedRetries:
         manager = _manager(tmp_path)
         workflow = WorkflowState(
             issue_number=1, repository="owner/repo", project="repo",
-            phase=WorkflowPhase.STUCK, retry_count=2, last_error="boom", retry_at="",
+            phase=WorkflowPhase.STUCK, retry_count=2, last_error="boom", retry_at=None,
         )
         manager.state.set_workflow(workflow)
         processed = asyncio.run(manager.process_queue())
@@ -203,7 +203,7 @@ class TestBoundedRetries:
         wf = manager.state.get_workflow("owner/repo", 1)
         assert wf.retry_count == 0
         assert wf.last_error == ""
-        assert wf.retry_at == ""
+        assert wf.retry_at is None
 
 
 class FakeOpenCode:
@@ -237,7 +237,7 @@ class TestOpenCodeTaskPolling:
             processed = asyncio.run(manager.process_queue())
         assert processed == 0
         wf = manager.state.get_workflow("owner/repo", 1)
-        assert wf.opencode_run_id == "abc"
+        assert wf.opencode_session_id == "abc"
         assert wf.phase == WorkflowPhase.PLANNING
         assert wf.retry_count == 0
 
@@ -245,26 +245,26 @@ class TestOpenCodeTaskPolling:
         manager = _manager(tmp_path)
         manager.opencode = FakeOpenCode(status_results=[OpenCodeResult(success=True, output="A plan", run_id="abc")])
         provider = FakeProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_run_id="abc")
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="abc")
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             result = asyncio.run(manager._phase_planning(workflow))
         assert result.success
         assert workflow.plan == "A plan"
         assert workflow.phase == WorkflowPhase.VERIFICATION_DESIGN
-        assert workflow.opencode_run_id == ""
+        assert workflow.opencode_session_id == ""
 
     def test_missing_status_reruns_task(self, tmp_path):
         manager = _manager(tmp_path)
         manager.opencode = FakeOpenCode(status_results=[None], run_results=[OpenCodeResult(success=True, output="B plan", run_id="xyz")])
         provider = FakeProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_run_id="abc")
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="abc")
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             result = asyncio.run(manager._phase_planning(workflow))
         assert result.success
         assert workflow.plan == "B plan"
-        assert workflow.opencode_run_id == ""
+        assert workflow.opencode_session_id == ""
         assert manager.opencode.status_calls == 1
         assert manager.opencode.run_calls == 1
 

@@ -49,7 +49,7 @@ class WorkflowManager:
         active_workflows = self.state.list_active_workflows()
         processed = 0
         changed = False
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC)
         
         for workflow in active_workflows:
             if workflow.retry_at and workflow.retry_at > now:
@@ -60,7 +60,7 @@ class WorkflowManager:
                     processed += 1
                     workflow.retry_count = 0
                     workflow.last_error = ""
-                    workflow.retry_at = ""
+                    workflow.retry_at = None
                     self.state.set_workflow(workflow)
                     changed = True
                 elif result.error:
@@ -87,10 +87,10 @@ class WorkflowManager:
         if workflow.retry_count >= self.config.retry.max_attempts:
             workflow.phase = WorkflowPhase.FAILED
             workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: {error}"
-            workflow.retry_at = ""
+            workflow.retry_at = None
         else:
             delay = self._retry_delay(workflow.retry_count)
-            workflow.retry_at = (datetime.now(UTC) + timedelta(seconds=delay)).isoformat()
+            workflow.retry_at = datetime.now(UTC) + timedelta(seconds=delay)
         self.state.set_workflow(workflow)
     
     def _retry_delay(self, retry_count: int) -> int:
@@ -231,18 +231,18 @@ class WorkflowManager:
     async def _run_task(self, workflow: WorkflowState, task: OpenCodeTask) -> OpenCodeResult:
         """Run a task, or poll an in-flight one, persisting its run id.
 
-        If the workflow already has an opencode_run_id the task is polled via
+        If the workflow already has an opencode_session_id the task is polled via
         get_task_status. A missing/unknown task (status None) clears the run id
         and submits a fresh task so recovery can self-heal.
 """
-        if workflow.opencode_run_id:
-            status = await self.opencode.get_task_status(workflow.opencode_run_id)
+        if workflow.opencode_session_id:
+            status = await self.opencode.get_task_status(workflow.opencode_session_id)
             if status is not None:
                 return status
-            workflow.opencode_run_id = ""
+            workflow.opencode_session_id = ""
         result = await self.opencode.run_task(task)
-        if result.pending and not workflow.opencode_run_id:
-            workflow.opencode_run_id = result.run_id or task.run_id
+        if result.pending and not workflow.opencode_session_id:
+            workflow.opencode_session_id = result.run_id or task.run_id
         return result
 
     async def _phase_new(self, workflow: WorkflowState) -> WorkflowResult:
@@ -310,7 +310,7 @@ class WorkflowManager:
             if result.pending:
                 self.state.set_workflow(workflow)
                 return WorkflowResult(success=False, pending=True)
-            workflow.opencode_run_id = ''
+            workflow.opencode_session_id = ''
             if result.success:
                 workflow.plan = result.output
                 workflow.phase = WorkflowPhase.VERIFICATION_DESIGN
@@ -353,7 +353,7 @@ class WorkflowManager:
             if result.pending:
                 self.state.set_workflow(workflow)
                 return WorkflowResult(success=False, pending=True)
-            workflow.opencode_run_id = ''
+            workflow.opencode_session_id = ''
             if result.success:
                 workflow.verification_plan = result.output
                 
@@ -402,7 +402,7 @@ class WorkflowManager:
             if result.pending:
                 self.state.set_workflow(workflow)
                 return WorkflowResult(success=False, pending=True)
-            workflow.opencode_run_id = ''
+            workflow.opencode_session_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.IMPLEMENTING
                 self.state.set_workflow(workflow)
@@ -437,7 +437,7 @@ class WorkflowManager:
             if result.pending:
                 self.state.set_workflow(workflow)
                 return WorkflowResult(success=False, pending=True)
-            workflow.opencode_run_id = ''
+            workflow.opencode_session_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.VERIFY
                 self.state.set_workflow(workflow)
@@ -472,7 +472,7 @@ class WorkflowManager:
             if result.pending:
                 self.state.set_workflow(workflow)
                 return WorkflowResult(success=False, pending=True)
-            workflow.opencode_run_id = ''
+            workflow.opencode_session_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.AWAITING_REVIEW
                 self.state.set_workflow(workflow)
