@@ -80,10 +80,11 @@ eligible issue
 
 `STUCK` and `FAILED` are also represented in the state model. On startup the
 orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
-against the persisted state. OpenCode tasks that report an in-flight status are
-recorded by their run id and polled on subsequent passes instead of being
-re-submitted or marked failed. The current implementation does not yet provide
-CI polling or merge tracking.
+against the persisted state. OpenCode interactions are asynchronous: each
+repository gets a persistent session, prompts are submitted without waiting,
+and the workflow polls the session status/messages on subsequent passes instead
+of re-submitting or marking failed. The current implementation does not yet
+provide CI polling or merge tracking.
 
 ## Architecture
 
@@ -96,7 +97,7 @@ CI polling or merge tracking.
 - [`src/orchestrator/state.py`](src/orchestrator/state.py): JSON workflow state
   and JSONL history.
 - [`src/orchestrator/opencode.py`](src/orchestrator/opencode.py): HTTP client
-  for the OpenCode task API.
+  and session manager for the OpenCode server's session API.
 - [`src/git_provider/`](src/git_provider): common provider models plus GitHub
   and GitLab adapters.
 

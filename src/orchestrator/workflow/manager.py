@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
-from orchestrator.opencode import OpenCodeClient
+from orchestrator.opencode import OpenCodeClient, OpenCodeSessionManager
 from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow.phases import (
@@ -32,6 +32,7 @@ class WorkflowManager:
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
+        self.session_manager = OpenCodeSessionManager(self.opencode, state)
         self.providers = providers or ProviderManager(config)
 
     async def close(self):

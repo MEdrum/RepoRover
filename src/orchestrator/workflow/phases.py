@@ -111,7 +111,6 @@ async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) 
     if result.pending:
         manager.state.set_workflow(workflow)
         return WorkflowResult(success=False, pending=True)
-    workflow.opencode_session_id = ""
 
     if not result.success:
         error = f"{spec.phase.value} failed: {result.error}"

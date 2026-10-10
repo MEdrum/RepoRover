@@ -104,9 +104,10 @@ impact.
   `/app/config.yaml`) with validated configuration or constants.
 - [ ] Either implement memory and webhook configuration or remove it from the
   public configuration/documentation until it is wired into the runtime.
-- [ ] Decide whether OpenCode is synchronous. The current workflow assumes the
-  POST response contains the final output, while the client exposes status and
-  cancellation methods that are never integrated.
+- [x] OpenCode is asynchronous and session-based. One session per repository,
+  prompts are submitted via /prompt_async, completion is detected by polling
+  /session/status and /session/{id}/message, and abort/health endpoints are
+  wired into the client.
 - [ ] Define whether a successful workflow means “PR/MR created” or “change
   merged.” The current code marks the workflow `COMPLETED` immediately after
   creating a review request and never observes review/merge state.
