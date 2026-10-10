@@ -16,6 +16,12 @@ from orchestrator.config import OrchestratorConfig
 from orchestrator.opencode import OpenCodeResult
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow import WorkflowManager
+from orchestrator.workflow.phases import (
+    PHASE_SPECS,
+    execute_task_phase,
+    phase_awaiting_review,
+    phase_new,
+)
 
 
 class FakeProvider:
@@ -101,7 +107,7 @@ class TestPhaseNewDefaultBranch:
         provider = FakeProvider()
         workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW)
         with mock.patch("git_provider.create_provider", return_value=provider):
-            result = asyncio.run(manager._phase_new(workflow))
+            result = asyncio.run(phase_new(manager, workflow))
         assert result.success
         assert workflow.base_branch == "develop"
         assert ("agent/1-fix-bug", "develop") in provider.branches
@@ -120,7 +126,7 @@ class TestIdempotentSideEffects:
 
         with mock.patch("git_provider.create_provider", return_value=provider):
 
-            result = asyncio.run(manager._phase_new(workflow))
+            result = asyncio.run(phase_new(manager, workflow))
         assert result.success
         assert workflow.branch == "agent/1-fix-bug"
         assert workflow.base_branch == "develop"
@@ -142,7 +148,7 @@ class TestIdempotentSideEffects:
         )
         with mock.patch("git_provider.create_provider", return_value=provider):
 
-            result = asyncio.run(manager._phase_awaiting_review(workflow))
+            result = asyncio.run(phase_awaiting_review(manager, workflow))
         assert result.success
         assert workflow.phase == WorkflowPhase.COMPLETED
         assert provider.created_pull_requests == []  # create_pull_request was not called
@@ -248,7 +254,7 @@ class TestOpenCodeTaskPolling:
         workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="abc")
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
-            result = asyncio.run(manager._phase_planning(workflow))
+            result = asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
         assert result.success
         assert workflow.plan == "A plan"
         assert workflow.phase == WorkflowPhase.VERIFICATION_DESIGN
@@ -261,7 +267,7 @@ class TestOpenCodeTaskPolling:
         workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="abc")
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
-            result = asyncio.run(manager._phase_planning(workflow))
+            result = asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
         assert result.success
         assert workflow.plan == "B plan"
         assert workflow.opencode_session_id == ""
