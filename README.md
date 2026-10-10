@@ -218,10 +218,14 @@ Contributions are welcome. Before opening a pull request:
 1. Create a focused branch from the current default branch.
 2. Keep changes scoped and update the README or configuration example when
    behavior or setup changes.
-3. Run the syntax check and any relevant tests:
+3. Run the checks that CI enforces:
 
    ```bash
    python -m compileall -q src
+   ruff check src tests
+   ruff format --check src tests
+   mypy src
+   pytest -q tests/
    ```
 
 4. Explain the motivation, implementation, and verification in the pull

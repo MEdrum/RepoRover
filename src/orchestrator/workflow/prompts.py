@@ -20,7 +20,7 @@ def build_planning_prompt(issue, workflow) -> str:
 {issue.body}
 
 ## Labels
-{', '.join(issue.labels)}
+{", ".join(issue.labels)}
 
 ## Your Task
 Create a detailed implementation plan following this format:
@@ -69,7 +69,8 @@ Create a verification strategy following this format:
 [List specific automated tests to write/run, or state "No automated tests meaningfully cover this change"]
 
 ### Manual / visual verification
-[If automated tests cannot meaningfully cover the requirement, provide a detailed manual verification plan with specific steps]
+[If automated tests cannot meaningfully cover the requirement, provide a detailed manual
+verification plan with specific steps]
 
 ### Acceptance criteria
 [Specific criteria that must be met for the issue to be considered complete]

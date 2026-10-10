@@ -32,17 +32,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WorkflowResult:
     """Result of workflow processing."""
+
     success: bool
     next_phase: WorkflowPhase | None = None
     error: str = ""
     error_category: str = ""
-    metadata: dict = None
+    metadata: dict | None = None
     pending: bool = False
 
 
 @dataclass(frozen=True)
 class PhaseSpec:
     """Description of an OpenCode task phase."""
+
     phase: WorkflowPhase
     prompt_builder: Callable
     output_field: str | None
@@ -130,7 +132,9 @@ async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) 
 
     if spec.comment_prefix:
         await provider.create_comment(
-            owner, repo, workflow.issue_number,
+            owner,
+            repo,
+            workflow.issue_number,
             f"## {spec.comment_prefix}\n\n{result.output}",
         )
     return WorkflowResult(success=True, next_phase=next_phase)
@@ -146,7 +150,9 @@ async def ensure_branch(provider: GitProvider, owner: str, repo: str, branch: st
         logger.info(f"Branch {branch} already exists, reusing")
 
 
-async def ensure_pull_request(provider: GitProvider, owner: str, repo: str, title: str, body: str, head: str, base: str):
+async def ensure_pull_request(
+    provider: GitProvider, owner: str, repo: str, title: str, body: str, head: str, base: str
+):
     """Find or create a PR/MR for the head branch (idempotent)."""
     existing = await provider.list_pull_requests(owner, repo, state="open", head=head)
     for pr in existing:
@@ -154,7 +160,12 @@ async def ensure_pull_request(provider: GitProvider, owner: str, repo: str, titl
             logger.info(f"PR/MR for {head} already exists, reusing")
             return pr
     return await provider.create_pull_request(
-        owner=owner, repo=repo, title=title, body=body, head=head, base=base,
+        owner=owner,
+        repo=repo,
+        title=title,
+        body=body,
+        head=head,
+        base=base,
     )
 
 
@@ -176,12 +187,16 @@ async def phase_new(manager, workflow: WorkflowState) -> WorkflowResult:
         workflow.phase = WorkflowPhase.PLANNING
         manager.state.set_workflow(workflow)
         await provider.create_comment(
-            owner, repo, workflow.issue_number,
-            f"## Agent started\n\n**Branch:** `{branch_name}`\n**Base:** `{workflow.base_branch}`\n\nStarting planning phase...",
+            owner,
+            repo,
+            workflow.issue_number,
+            f"## Agent started\n\n**Branch:** `{branch_name}`\n**Base:** `{workflow.base_branch}`\n\nStarting planning phase...",  # noqa: E501
         )
         return WorkflowResult(success=True, next_phase=WorkflowPhase.PLANNING)
-    except Exception as e:  # noqa: BLE001 - convert to a recoverable failure result
-        return WorkflowResult(success=False, error=f"Failed to initialize workflow: {e}", error_category=classify_exception(e))
+    except Exception as e:
+        return WorkflowResult(
+            success=False, error=f"Failed to initialize workflow: {e}", error_category=classify_exception(e)
+        )
 
 
 async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowResult:
@@ -193,21 +208,28 @@ async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowRes
         owner, repo = workflow.repository.split("/", 1)
         issue = await provider.get_issue(owner, repo, workflow.issue_number)
         pr_title = f"Fix: {issue.title}"
-        pr_body = f"Closes #{workflow.issue_number}\n\n## Summary\n\n{workflow.plan}\n\n## Verification\n\n{workflow.verification_plan}"
+        pr_body = f"Closes #{workflow.issue_number}\n\n## Summary\n\n{workflow.plan}\n\n## Verification\n\n{workflow.verification_plan}"  # noqa: E501
         pr = await ensure_pull_request(
-            provider=provider, owner=owner, repo=repo, title=pr_title, body=pr_body,
-            head=workflow.branch, base=workflow.base_branch,
+            provider=provider,
+            owner=owner,
+            repo=repo,
+            title=pr_title,
+            body=pr_body,
+            head=workflow.branch,
+            base=workflow.base_branch,
         )
         await provider.add_label(owner, repo, workflow.issue_number, awaiting_review_label)
         await provider.remove_label(owner, repo, workflow.issue_number, in_progress_label)
         await provider.create_comment(
-            owner, repo, workflow.issue_number,
-            f"## Agent implementation complete\n\n**PR/MR:** {pr.html_url}\n\n**Branch:** `{workflow.branch}`\n\nAwaiting human review.",
+            owner,
+            repo,
+            workflow.issue_number,
+            f"## Agent implementation complete\n\n**PR/MR:** {pr.html_url}\n\n**Branch:** `{workflow.branch}`\n\nAwaiting human review.",  # noqa: E501
         )
         workflow.phase = WorkflowPhase.COMPLETED
         manager.state.set_workflow(workflow)
         return WorkflowResult(success=True, next_phase=WorkflowPhase.COMPLETED)
-    except Exception as e:  # noqa: BLE001 - convert to a recoverable failure result
+    except Exception as e:
         return WorkflowResult(success=False, error=f"Failed to create PR/MR: {e}", error_category=classify_exception(e))
 
 

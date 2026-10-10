@@ -7,6 +7,7 @@ recovery. Phase execution is delegated to orchestrator.workflow.phases.
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 class WorkflowManager:
     """Manages workflow processing."""
 
-    def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager = None):
+    def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager | None = None):
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
@@ -70,7 +71,9 @@ class WorkflowManager:
                     self._record_failure(workflow, result.error, result.error_category)
                     changed = True
                 elif result.pending:
-                    logger.info(f"Workflow {workflow.repository}#{workflow.issue_number} awaiting OpenCode task completion")
+                    logger.info(
+                        f"Workflow {workflow.repository}#{workflow.issue_number} awaiting OpenCode task completion"
+                    )
                     changed = True
             except Exception as e:
                 logger.exception(f"Unexpected error processing workflow {workflow.repository}#{workflow.issue_number}")
@@ -88,7 +91,9 @@ class WorkflowManager:
         workflow.last_error = f"[{category or 'unknown'}] {error}"
         if workflow.retry_count >= self.config.retry.max_attempts:
             workflow.phase = WorkflowPhase.FAILED
-            workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: [{category or 'unknown'}] {error}"
+            workflow.last_error = (
+                f"Exceeded {self.config.retry.max_attempts} attempts: [{category or 'unknown'}] {error}"
+            )
             workflow.retry_at = None
         else:
             delay = self._retry_delay(workflow.retry_count)
@@ -109,7 +114,7 @@ class WorkflowManager:
         and for completed workflows the existence of an open PR/MR. Returns a
         report of what was fixed or found missing; never raises.
         """
-        report = {
+        report: dict[str, Any] = {
             "checked": 0,
             "labels_fixed": 0,
             "missing_branches": [],
@@ -145,7 +150,7 @@ class WorkflowManager:
                         if label != expected and label in issue.labels:
                             await provider.remove_label(owner, repo, workflow.issue_number, label)
                             report["labels_fixed"] += 1
-            except Exception as e:  # noqa: BLE001 - recovery must not crash startup
+            except Exception as e:
                 report["errors"].append(f"{key}: {e}")
 
         return report
@@ -177,7 +182,9 @@ class WorkflowManager:
 
     async def _process_workflow(self, workflow: WorkflowState) -> WorkflowResult:
         """Process a single workflow based on its current phase."""
-        logger.info(f"Processing workflow {workflow.repository}#{workflow.issue_number} in phase {workflow.phase.value}")
+        logger.info(
+            f"Processing workflow {workflow.repository}#{workflow.issue_number} in phase {workflow.phase.value}"
+        )
         try:
             if workflow.phase in PHASE_SPECS:
                 return await execute_task_phase(self, workflow, PHASE_SPECS[workflow.phase])

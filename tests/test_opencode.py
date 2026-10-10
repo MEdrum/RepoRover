@@ -76,11 +76,18 @@ class TestOpenCodeClient:
             asyncio.run(client.create_session("title"))
 
     def test_session_status_values(self):
-        client, _ = _client({("GET", "/session/status"): (200, {
-            "ses_1": {"type": "idle"},
-            "ses_2": {"type": "busy"},
-            "ses_3": {"type": "retry", "attempt": 2},
-        })})
+        client, _ = _client(
+            {
+                ("GET", "/session/status"): (
+                    200,
+                    {
+                        "ses_1": {"type": "idle"},
+                        "ses_2": {"type": "busy"},
+                        "ses_3": {"type": "retry", "attempt": 2},
+                    },
+                )
+            }
+        )
         assert asyncio.run(client.session_status("ses_1")) == "idle"
         assert asyncio.run(client.session_status("ses_2")) == "busy"
         assert asyncio.run(client.session_status("ses_3")) == "retry"
@@ -109,11 +116,14 @@ class TestOpenCodeClient:
     def test_latest_assistant_message_and_text(self):
         messages = [
             {"info": {"role": "user"}, "parts": []},
-            {"info": {"role": "assistant", "id": "m2"}, "parts": [
-                {"type": "text", "text": "Hello "},
-                {"type": "text", "text": "world"},
-                {"type": "tool", "callID": "c1"},
-            ]},
+            {
+                "info": {"role": "assistant", "id": "m2"},
+                "parts": [
+                    {"type": "text", "text": "Hello "},
+                    {"type": "text", "text": "world"},
+                    {"type": "tool", "callID": "c1"},
+                ],
+            },
         ]
         latest = OpenCodeClient.latest_assistant_message(messages)
         assert latest["info"]["id"] == "m2"
@@ -148,14 +158,16 @@ class TestOpenCodeSessionManager:
         client = mock.Mock(spec=OpenCodeClient)
         client.create_session = mock.AsyncMock(return_value="ses_1")
         client.session_status = mock.AsyncMock(side_effect=["idle", "busy", "idle", "idle"])
-        client.get_messages = mock.AsyncMock(side_effect=[
-            [{"info": {"role": "user"}, "parts": []}],
-            [{"info": {"role": "user"}, "parts": []}],
-            [
-                {"info": {"role": "user"}, "parts": []},
-                {"info": {"role": "assistant", "id": "m_new"}, "parts": [{"type": "text", "text": "result"}]},
-            ],
-        ])
+        client.get_messages = mock.AsyncMock(
+            side_effect=[
+                [{"info": {"role": "user"}, "parts": []}],
+                [{"info": {"role": "user"}, "parts": []}],
+                [
+                    {"info": {"role": "user"}, "parts": []},
+                    {"info": {"role": "assistant", "id": "m_new"}, "parts": [{"type": "text", "text": "result"}]},
+                ],
+            ]
+        )
         client.submit_prompt_async = mock.AsyncMock()
         manager = OpenCodeSessionManager(client, state)
         workflow = _workflow()
@@ -183,9 +195,11 @@ class TestOpenCodeSessionManager:
         state = OrchestratorState(str(tmp_path))
         client = mock.Mock(spec=OpenCodeClient)
         client.session_status = mock.AsyncMock(return_value="idle")
-        client.get_messages = mock.AsyncMock(return_value=[
-            {"info": {"role": "assistant", "id": "m_old"}, "parts": [{"type": "text", "text": "old"}]},
-        ])
+        client.get_messages = mock.AsyncMock(
+            return_value=[
+                {"info": {"role": "assistant", "id": "m_old"}, "parts": [{"type": "text", "text": "old"}]},
+            ]
+        )
         client.submit_prompt_async = mock.AsyncMock()
         manager = OpenCodeSessionManager(client, state)
         workflow = _workflow(opencode_session_id="ses_restored")
@@ -201,9 +215,11 @@ class TestOpenCodeSessionManager:
         client = mock.Mock(spec=OpenCodeClient)
         client.create_session = mock.AsyncMock(return_value="ses_1")
         client.session_status = mock.AsyncMock(return_value="idle")
-        client.get_messages = mock.AsyncMock(return_value=[
-            {"info": {"role": "user"}, "parts": []},
-        ])
+        client.get_messages = mock.AsyncMock(
+            return_value=[
+                {"info": {"role": "user"}, "parts": []},
+            ]
+        )
         client.submit_prompt_async = mock.AsyncMock()
         manager = OpenCodeSessionManager(client, state)
         a = _workflow(number=1)

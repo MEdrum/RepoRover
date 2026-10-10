@@ -123,7 +123,9 @@ class TestRequeueStuckWorkflows:
         state = OrchestratorState(str(tmp_path))
         discovery = IssueDiscovery(_config(str(tmp_path)), state)
         provider = StuckIssueProvider(labels_by_issue={1: ["doing"]})
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting")
+        workflow = WorkflowState(
+            issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting"
+        )
         state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             requeued = asyncio.run(discovery.requeue_stuck_workflows())
@@ -136,7 +138,9 @@ class TestRequeueStuckWorkflows:
         state = OrchestratorState(str(tmp_path))
         discovery = IssueDiscovery(_config(str(tmp_path)), state)
         provider = StuckIssueProvider(labels_by_issue={2: ["stuck"]})
-        workflow = WorkflowState(issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting")
+        workflow = WorkflowState(
+            issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting"
+        )
         state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             requeued = asyncio.run(discovery.requeue_stuck_workflows())

@@ -1,0 +1,65 @@
+[project]
+name = "reporover"
+version = "0.1.0"
+description = "Agent orchestrator: discover labeled issues, drive a phase workflow, and open PR/MRs."
+requires-python = ">=3.12"
+dependencies = [
+    "PyGithub==2.6.1",
+    "python-gitlab==5.3.0",
+    "httpx==0.28.1",
+    "pyyaml==6.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "C4",     # flake8-comprehensions
+    "RUF",    # ruff-specific
+    "ASYNC",  # flake8-async
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Adapter methods deliberately catch any exception and re-raise it as a typed
+# ProviderError; the orchestrator loops deliberately catch broadly so a single
+# failure cannot kill the loop.
+"src/git_provider/*.py" = ["BLE001"]
+"src/orchestrator/main.py" = ["BLE001"]
+"src/orchestrator/discovery.py" = ["BLE001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = ["tests", ".venv"]
+
+# The git_provider adapter layer predates the type annotations; type it as a
+# follow-up (tracked in todo.md) rather than blocking CI on it today.
+[[tool.mypy.overrides]]
+module = "git_provider.*"
+ignore_errors = true

@@ -34,6 +34,7 @@ class OpenCodeError(Exception):
 @dataclass
 class OpenCodeTask:
     """A prompt submitted to OpenCode for a workflow phase."""
+
     repository: str
     project: str
     branch: str
@@ -50,6 +51,7 @@ class OpenCodeTask:
 @dataclass
 class OpenCodeResult:
     """Result of an OpenCode interaction."""
+
     success: bool
     output: str = ""
     error: str = ""
@@ -137,7 +139,7 @@ class OpenCodeClient:
         try:
             response = await self._request("POST", f"/session/{session_id}/abort")
             return response.status_code < 400
-        except Exception as e:  # noqa: BLE001 - convert client failures to results / best-effort
+        except Exception as e:
             logger.error(f"Failed to abort session {session_id}: {e}")
             return False
 
@@ -146,7 +148,7 @@ class OpenCodeClient:
         try:
             response = await self._request("GET", "/global/health", timeout=5)
             return response.status_code == 200
-        except Exception:  # noqa: BLE001 - convert client failures to results / best-effort
+        except Exception:
             return False
 
     @staticmethod
@@ -211,7 +213,7 @@ class OpenCodeSessionManager:
 
         try:
             status = await self.client.session_status(session_id)
-        except Exception as e:  # noqa: BLE001 - convert client failures to results / best-effort
+        except Exception as e:
             return OpenCodeResult(success=False, error=f"OpenCode status check failed: {e}", run_id=session_id)
 
         if status in ("busy", "retry"):
@@ -220,7 +222,7 @@ class OpenCodeSessionManager:
         # Idle: look for a new assistant message beyond the consumed boundary.
         try:
             messages = await self.client.get_messages(session_id)
-        except Exception as e:  # noqa: BLE001 - convert client failures to results / best-effort
+        except Exception as e:
             return OpenCodeResult(success=False, error=f"OpenCode message check failed: {e}", run_id=session_id)
 
         latest = OpenCodeClient.latest_assistant_message(messages)
@@ -244,7 +246,7 @@ class OpenCodeSessionManager:
 
         try:
             await self.client.submit_prompt_async(session_id, prompt)
-        except Exception as e:  # noqa: BLE001 - convert client failures to results / best-effort
+        except Exception as e:
             return OpenCodeResult(success=False, error=f"OpenCode submit failed: {e}", run_id=session_id)
         self._inflight.add(session_id)
         return OpenCodeResult(success=True, pending=True, run_id=session_id)

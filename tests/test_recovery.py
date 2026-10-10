@@ -11,9 +11,17 @@ from orchestrator.workflow import WorkflowManager
 
 def _issue(number, labels):
     return Issue(
-        number=number, title="Fix bug", body="", state="open",
-        labels=labels, assignees=[], author="tester", created_at="",
-        updated_at="", html_url="", comments_count=0,
+        number=number,
+        title="Fix bug",
+        body="",
+        state="open",
+        labels=labels,
+        assignees=[],
+        author="tester",
+        created_at="",
+        updated_at="",
+        html_url="",
+        comments_count=0,
         repository="owner/repo",
     )
 
@@ -61,9 +69,15 @@ class TestRecoverLabels:
     def test_adds_in_progress_and_removes_eligible(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeRecoveryProvider(
-            issues={( "owner", "repo", 1): _issue(1, ["agent"])},
+            issues={("owner", "repo", 1): _issue(1, ["agent"])},
         )
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             report = asyncio.run(manager.recover())
@@ -76,7 +90,13 @@ class TestRecoverLabels:
         provider = FakeRecoveryProvider(
             issues={("owner", "repo", 2): _issue(2, ["doing"])},
         )
-        workflow = WorkflowState(issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.AWAITING_REVIEW, branch="agent/2-fix-bug")
+        workflow = WorkflowState(
+            issue_number=2,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.AWAITING_REVIEW,
+            branch="agent/2-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             report = asyncio.run(manager.recover())
@@ -104,7 +124,13 @@ class TestRecoverResources:
         provider = FakeRecoveryProvider(
             issues={("owner", "repo", 4): _issue(4, ["doing"])},
         )
-        workflow = WorkflowState(issue_number=4, repository="owner/repo", project="repo", phase=WorkflowPhase.IMPLEMENTING, branch="agent/4-fix-bug")
+        workflow = WorkflowState(
+            issue_number=4,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.IMPLEMENTING,
+            branch="agent/4-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             report = asyncio.run(manager.recover())
@@ -115,7 +141,13 @@ class TestRecoverResources:
         provider = FakeRecoveryProvider(
             issues={("owner", "repo", 5): _issue(5, [])},
         )
-        workflow = WorkflowState(issue_number=5, repository="owner/repo", project="repo", phase=WorkflowPhase.COMPLETED, branch="agent/5-fix-bug")
+        workflow = WorkflowState(
+            issue_number=5,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.COMPLETED,
+            branch="agent/5-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             report = asyncio.run(manager.recover())
@@ -126,13 +158,29 @@ class TestRecoverResources:
         provider = FakeRecoveryProvider(
             issues={("owner", "repo", 6): _issue(6, [])},
             branches={"agent/6-fix-bug"},
-            pull_requests=[PullRequest(
-                number=6, title="Fix: Fix bug", body="", state="open",
-                head_branch="agent/6-fix-bug", base_branch="develop", author="tester",
-                created_at="", updated_at="", html_url="https://example.com/pr/6", draft=False,
-            )],
+            pull_requests=[
+                PullRequest(
+                    number=6,
+                    title="Fix: Fix bug",
+                    body="",
+                    state="open",
+                    head_branch="agent/6-fix-bug",
+                    base_branch="develop",
+                    author="tester",
+                    created_at="",
+                    updated_at="",
+                    html_url="https://example.com/pr/6",
+                    draft=False,
+                )
+            ],
         )
-        workflow = WorkflowState(issue_number=6, repository="owner/repo", project="repo", phase=WorkflowPhase.COMPLETED, branch="agent/6-fix-bug")
+        workflow = WorkflowState(
+            issue_number=6,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.COMPLETED,
+            branch="agent/6-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             report = asyncio.run(manager.recover())

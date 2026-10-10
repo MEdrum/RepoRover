@@ -48,10 +48,12 @@ def _manager(provider="both", github_repos=(), gitlab_repos=()):
     manager = ProviderManager(config)
     github = FakeGitHubProvider(github_repos)
     gitlab = FakeGitLabProvider(gitlab_repos)
+
     def _create(provider_type, cfg):
         if provider_type == ProviderType.GITHUB:
             return github
         return gitlab
+
     return manager, github, gitlab, _create
 
 

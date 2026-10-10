@@ -49,26 +49,30 @@ class TestPersistence:
         assert wf.retry_at > now
 
     def test_legacy_flat_format_is_migrated(self, tmp_path):
-        (tmp_path / "workflows.json").write_text(json.dumps({
-            "owner/repo#1": {
-                "issue_number": 1,
-                "repository": "owner/repo",
-                "project": "repo",
-                "phase": "new",
-                "branch": "",
-                "base_branch": "main",
-                "plan": "",
-                "verification_plan": "",
-                "opencode_run_id": "run-abc",
-                "started_at": "",
-                "updated_at": "",
-                "stuck_reason": "",
-                "retry_count": 0,
-                "last_error": "",
-                "retry_at": "",
-                "metadata": {},
-            }
-        }))
+        (tmp_path / "workflows.json").write_text(
+            json.dumps(
+                {
+                    "owner/repo#1": {
+                        "issue_number": 1,
+                        "repository": "owner/repo",
+                        "project": "repo",
+                        "phase": "new",
+                        "branch": "",
+                        "base_branch": "main",
+                        "plan": "",
+                        "verification_plan": "",
+                        "opencode_run_id": "run-abc",
+                        "started_at": "",
+                        "updated_at": "",
+                        "stuck_reason": "",
+                        "retry_count": 0,
+                        "last_error": "",
+                        "retry_at": "",
+                        "metadata": {},
+                    }
+                }
+            )
+        )
         state = OrchestratorState(str(tmp_path))
         asyncio.run(state.load())
         wf = state.get_workflow("owner/repo", 1)

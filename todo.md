@@ -114,6 +114,8 @@ impact.
 - [ ] Add structured metrics/health reporting for discovery failures, queue
   depth, phase duration, retries, provider rate limits, and OpenCode health.
 
+
+- [ ] Add type annotations to the `git_provider` adapter layer (currently excluded from mypy via pyproject overrides).
 ## Potential future features
 
 - [ ] Webhook-triggered discovery with signature verification and deduplication,

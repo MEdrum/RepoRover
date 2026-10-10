@@ -16,6 +16,7 @@ DEFAULT_LABELS = {
 @dataclass
 class GitProviderConfig:
     """Git provider configuration."""
+
     provider: str = "github"  # github, gitlab, both
     github_token: str = ""
     github_base_url: str = "https://api.github.com"
@@ -30,6 +31,7 @@ class GitProviderConfig:
 @dataclass
 class OpenCodeConfig:
     """OpenCode service configuration."""
+
     api_url: str = "http://opencode:8080"
     password: str = ""
     timeout: int = 300
@@ -41,6 +43,7 @@ class OpenCodeConfig:
 @dataclass
 class StateConfig:
     """State persistence configuration."""
+
     state_dir: str = "/data/state"
     max_history: int = 1000
 
@@ -48,6 +51,7 @@ class StateConfig:
 @dataclass
 class RetryConfig:
     """Retry/backoff configuration for workflow phases."""
+
     max_attempts: int = 3
     base_delay_seconds: int = 2
     max_delay_seconds: int = 60
@@ -57,6 +61,7 @@ class RetryConfig:
 @dataclass
 class OrchestratorConfig:
     """Main orchestrator configuration."""
+
     git_provider: GitProviderConfig = field(default_factory=GitProviderConfig)
     opencode: OpenCodeConfig = field(default_factory=OpenCodeConfig)
     state: StateConfig = field(default_factory=StateConfig)
@@ -85,8 +90,7 @@ class OrchestratorConfig:
 
         if gp.provider not in ("github", "gitlab", "both"):
             raise ValueError(
-                f"Unsupported git provider: {gp.provider!r}. "
-                f"Supported values: 'github', 'gitlab', 'both'."
+                f"Unsupported git provider: {gp.provider!r}. Supported values: 'github', 'gitlab', 'both'."
             )
         if gp.provider in ("github", "both") and not gp.github_token:
             raise ValueError("git provider requires a GitHub token (config github.token or GITHUB_TOKEN)")

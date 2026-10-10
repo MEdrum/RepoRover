@@ -29,9 +29,16 @@ class FakeProvider:
 
     def __init__(self, repository=None, existing_branch=None, existing_pull_requests=None):
         self.repository = repository or Repository(
-            id="1", name="repo", full_name="owner/repo", owner="owner",
-            private=False, default_branch="develop", clone_url="",
-            ssh_url="", html_url="", description=None,
+            id="1",
+            name="repo",
+            full_name="owner/repo",
+            owner="owner",
+            private=False,
+            default_branch="develop",
+            clone_url="",
+            ssh_url="",
+            html_url="",
+            description=None,
         )
         self.existing_branch = existing_branch
         self.existing_pull_requests = existing_pull_requests or []
@@ -47,9 +54,17 @@ class FakeProvider:
 
     async def get_issue(self, owner, repo, number):
         return Issue(
-            number=number, title="Fix bug", body="", state="open",
-            labels=["agent"], assignees=[], author="tester", created_at="",
-            updated_at="", html_url="", comments_count=0,
+            number=number,
+            title="Fix bug",
+            body="",
+            state="open",
+            labels=["agent"],
+            assignees=[],
+            author="tester",
+            created_at="",
+            updated_at="",
+            html_url="",
+            comments_count=0,
             repository="owner/repo",
         )
 
@@ -68,7 +83,6 @@ class FakeProvider:
         self.branches.append((branch, from_branch))
         return Branch(name=branch, commit_sha="abc", protected=False)
 
-
     async def create_comment(self, owner, repo, number, body):
         self.comments.append(body)
         return mock.Mock()
@@ -76,8 +90,7 @@ class FakeProvider:
     async def list_pull_requests(self, owner, repo, state="open", head=None, base=None):
         result = []
         for pr in self.existing_pull_requests:
-
-            if (head is None or pr.head_branch == head)and (base is None or pr.base_branch == base):
+            if (head is None or pr.head_branch == head) and (base is None or pr.base_branch == base):
                 result.append(pr)
         return result
 
@@ -85,9 +98,15 @@ class FakeProvider:
         self.created_pull_requests.append((head, base))
         return PullRequest(
             number=len(self.created_pull_requests),
-            title=title, body=body, state="open",
-            head_branch=head, base_branch=base, author="tester",
-            created_at="", updated_at="", html_url=f"https://example.com/pr/{len(self.created_pull_requests)}",
+            title=title,
+            body=body,
+            state="open",
+            head_branch=head,
+            base_branch=base,
+            author="tester",
+            created_at="",
+            updated_at="",
+            html_url=f"https://example.com/pr/{len(self.created_pull_requests)}",
             draft=draft,
         )
 
@@ -116,38 +135,45 @@ class TestPhaseNewDefaultBranch:
 
 
 class TestIdempotentSideEffects:
-
-
-
     def test_phase_new_reuses_existing_branch(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider(existing_branch=Branch(name="agent/1-fix-bug", commit_sha="abc", protected=False))
         workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW)
 
         with mock.patch("git_provider.create_provider", return_value=provider):
-
             result = asyncio.run(phase_new(manager, workflow))
         assert result.success
         assert workflow.branch == "agent/1-fix-bug"
         assert workflow.base_branch == "develop"
         assert provider.branches == []  # create_branch was not called
 
-
     def test_phase_awaiting_review_reuses_existing_pr(self, tmp_path):
         manager = _manager(tmp_path)
         existing_pr = PullRequest(
-            number=9, title="Fix: Fix bug", body="", state="open",
-            head_branch="agent/1-fix-bug", base_branch="develop", author="tester",
-            created_at="", updated_at="", html_url="https://example.com/pr/9", draft=False,
+            number=9,
+            title="Fix: Fix bug",
+            body="",
+            state="open",
+            head_branch="agent/1-fix-bug",
+            base_branch="develop",
+            author="tester",
+            created_at="",
+            updated_at="",
+            html_url="https://example.com/pr/9",
+            draft=False,
         )
         provider = FakeProvider(existing_pull_requests=[existing_pr])
         workflow = WorkflowState(
-            issue_number=1, repository="owner/repo", project="repo",
-            phase=WorkflowPhase.AWAITING_REVIEW, branch="agent/1-fix-bug",
-            base_branch="develop", plan="A plan", verification_plan="A verification plan",
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.AWAITING_REVIEW,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            plan="A plan",
+            verification_plan="A verification plan",
         )
         with mock.patch("git_provider.create_provider", return_value=provider):
-
             result = asyncio.run(phase_awaiting_review(manager, workflow))
         assert result.success
         assert workflow.phase == WorkflowPhase.COMPLETED
@@ -180,7 +206,14 @@ class TestBoundedRetries:
     def test_phase_failure_marks_workflow_failed_after_max_attempts(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FailingProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.NEW, retry_count=2, retry_at=None)
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.NEW,
+            retry_count=2,
+            retry_at=None,
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             processed = asyncio.run(manager.process_queue())
@@ -200,8 +233,13 @@ class TestBoundedRetries:
     def test_phase_success_resets_retry_state(self, tmp_path):
         manager = _manager(tmp_path)
         workflow = WorkflowState(
-            issue_number=1, repository="owner/repo", project="repo",
-            phase=WorkflowPhase.STUCK, retry_count=2, last_error="boom", retry_at=None,
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.STUCK,
+            retry_count=2,
+            last_error="boom",
+            retry_at=None,
         )
         manager.state.set_workflow(workflow)
         processed = asyncio.run(manager.process_queue())
@@ -216,12 +254,24 @@ class TestOpenCodeSessionPhases:
     def test_pending_result_keeps_workflow_in_phase_without_failure(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+        )
         manager.state.set_workflow(workflow)
-        with mock.patch.object(
-            manager.session_manager, "run_or_poll", new_callable=mock.AsyncMock,
-            return_value=OpenCodeResult(success=True, pending=True, run_id="ses_1"),
-        ), mock.patch("git_provider.create_provider", return_value=provider):
+        with (
+            mock.patch.object(
+                manager.session_manager,
+                "run_or_poll",
+                new_callable=mock.AsyncMock,
+                return_value=OpenCodeResult(success=True, pending=True, run_id="ses_1"),
+            ),
+            mock.patch("git_provider.create_provider", return_value=provider),
+        ):
             processed = asyncio.run(manager.process_queue())
         assert processed == 0
         wf = manager.state.get_workflow("owner/repo", 1)
@@ -231,12 +281,25 @@ class TestOpenCodeSessionPhases:
     def test_success_result_advances_phase_with_output(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="ses_1")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            opencode_session_id="ses_1",
+        )
         manager.state.set_workflow(workflow)
-        with mock.patch.object(
-            manager.session_manager, "run_or_poll", new_callable=mock.AsyncMock,
-            return_value=OpenCodeResult(success=True, output="A plan", run_id="ses_1"),
-        ), mock.patch("git_provider.create_provider", return_value=provider):
+        with (
+            mock.patch.object(
+                manager.session_manager,
+                "run_or_poll",
+                new_callable=mock.AsyncMock,
+                return_value=OpenCodeResult(success=True, output="A plan", run_id="ses_1"),
+            ),
+            mock.patch("git_provider.create_provider", return_value=provider),
+        ):
             result = asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
         assert result.success
         assert workflow.plan == "A plan"
@@ -246,12 +309,25 @@ class TestOpenCodeSessionPhases:
     def test_failed_result_returns_failure_without_advancing(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug", base_branch="develop", opencode_session_id="ses_1")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            opencode_session_id="ses_1",
+        )
         manager.state.set_workflow(workflow)
-        with mock.patch.object(
-            manager.session_manager, "run_or_poll", new_callable=mock.AsyncMock,
-            return_value=OpenCodeResult(success=False, error="boom", run_id="ses_1"),
-        ), mock.patch("git_provider.create_provider", return_value=provider):
+        with (
+            mock.patch.object(
+                manager.session_manager,
+                "run_or_poll",
+                new_callable=mock.AsyncMock,
+                return_value=OpenCodeResult(success=False, error="boom", run_id="ses_1"),
+            ),
+            mock.patch("git_provider.create_provider", return_value=provider),
+        ):
             result = asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
         assert not result.success
         assert "failed" in result.error
@@ -284,7 +360,13 @@ class TestErrorCategorization:
     def test_provider_error_is_categorized(self, tmp_path):
         manager = _manager(tmp_path)
         provider = RaisingProvider(ProviderError("rate limited", category="rate_limited"))
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             result = asyncio.run(manager._process_workflow(workflow))
@@ -294,7 +376,13 @@ class TestErrorCategorization:
     def test_opencode_error_is_categorized(self, tmp_path):
         manager = _manager(tmp_path)
         provider = RaisingProvider(OpenCodeError("boom"))
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             result = asyncio.run(manager._process_workflow(workflow))
@@ -304,7 +392,13 @@ class TestErrorCategorization:
     def test_internal_error_is_categorized(self, tmp_path):
         manager = _manager(tmp_path)
         provider = RaisingProvider(RuntimeError("bug"))
-        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+        )
         manager.state.set_workflow(workflow)
         with mock.patch("git_provider.create_provider", return_value=provider):
             result = asyncio.run(manager._process_workflow(workflow))
@@ -314,7 +408,13 @@ class TestErrorCategorization:
     def test_failing_workflow_does_not_block_others(self, tmp_path):
         manager = _manager(tmp_path)
         bad_provider = RaisingProvider(RuntimeError("bug"))
-        bad = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        bad = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+        )
         good = WorkflowState(issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK)
         manager.state.set_workflow(bad)
         manager.state.set_workflow(good)
