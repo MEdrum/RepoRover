@@ -147,3 +147,98 @@ class TestRequeueStuckWorkflows:
         assert requeued == 0
         wf = state.get_workflow("owner/repo", 2)
         assert wf.phase == WorkflowPhase.STUCK
+
+
+class AllReposProvider:
+    """Fake provider that lists repositories and per-repo eligible issues."""
+
+    def __init__(self, repos, issues_by_repo):
+        self.repositories = repos
+        self.issues_by_repo = issues_by_repo
+        self.list_repos_calls = 0
+
+    async def authenticate(self):
+        return True
+
+    async def list_repositories(self):
+        self.list_repos_calls += 1
+        return self.repositories
+
+    async def list_eligible_issues(self, owner, repo, label="agent", limit=100):
+        return self.issues_by_repo.get(f"{owner}/{repo}", [])
+
+
+def _repo(full_name):
+    from git_provider import Repository
+
+    owner, name = full_name.split("/", 1)
+    return Repository(
+        id=full_name,
+        name=name,
+        full_name=full_name,
+        owner=owner,
+        private=False,
+        default_branch="main",
+        clone_url="",
+        ssh_url="",
+        html_url="",
+        description=None,
+    )
+
+
+class TestAllReposDiscovery:
+    def _config(self, state_dir, max_concurrent=5):
+        config = OrchestratorConfig()
+        config.git_provider.discover_all_repositories = True
+        config.opencode.max_concurrent = max_concurrent
+        config.state.state_dir = state_dir
+        return config
+
+    def test_queues_issues_from_all_repos(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(self._config(str(tmp_path)), state)
+        provider = AllReposProvider(
+            repos=[_repo("org/alpha"), _repo("org/beta")],
+            issues_by_repo={"org/alpha": [_issue(1)], "org/beta": [_issue(2)]},
+        )
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            queued = asyncio.run(discovery.discover_and_queue())
+        assert queued == 2
+        assert state.get_workflow("org/alpha", 1) is not None
+        assert state.get_workflow("org/beta", 2) is not None
+
+    def test_queues_all_issues_from_a_repo(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(self._config(str(tmp_path)), state)
+        provider = AllReposProvider(
+            repos=[_repo("org/alpha")],
+            issues_by_repo={"org/alpha": [_issue(1), _issue(2), _issue(3)]},
+        )
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            queued = asyncio.run(discovery.discover_and_queue())
+        assert queued == 3
+
+    def test_backpressure_skips_when_at_concurrency_limit(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        for n in range(1, 3):
+            state.set_workflow(
+                WorkflowState(issue_number=n, repository="org/repo", project="repo", phase=WorkflowPhase.PLANNING)
+            )
+        discovery = IssueDiscovery(self._config(str(tmp_path), max_concurrent=2), state)
+        provider = AllReposProvider(repos=[_repo("org/alpha")], issues_by_repo={})
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            queued = asyncio.run(discovery.discover_and_queue())
+        assert queued == 0
+        assert provider.list_repos_calls == 0
+
+    def test_stops_scanning_at_concurrency_limit(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(self._config(str(tmp_path), max_concurrent=2), state)
+        provider = AllReposProvider(
+            repos=[_repo("org/alpha"), _repo("org/beta"), _repo("org/gamma")],
+            issues_by_repo={"org/alpha": [_issue(1)], "org/beta": [_issue(2)]},
+        )
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            queued = asyncio.run(discovery.discover_and_queue())
+        assert queued == 2
+        assert state.get_workflow("org/gamma", 0) is None

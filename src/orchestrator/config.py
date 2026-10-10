@@ -24,6 +24,9 @@ class GitProviderConfig:
     gitlab_url: str = "https://gitlab.com"
     labels: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_LABELS))
     repositories: list[str] = field(default_factory=list)
+    # When true, discovery searches all repositories accessible to the provider
+    # API token(s) instead of the explicit repositories list.
+    discover_all_repositories: bool = False
     polling_interval: int = 60
     max_issues_per_poll: int = 50
 
@@ -35,8 +38,9 @@ class OpenCodeConfig:
     api_url: str = "http://opencode:8080"
     password: str = ""
     timeout: int = 300
-    # max_concurrent is reserved for the upcoming concurrency feature; it is
-    # not yet used by the runtime.
+    # max_concurrent is used by discovery as the backpressure/concurrency target
+    # for how many open agent issues are worked at once. True processing
+    # concurrency is not yet implemented (single-threaded loop).
     max_concurrent: int = 1
 
 
@@ -140,6 +144,7 @@ def _git_provider_from_dict(data: dict) -> GitProviderConfig:
         gitlab_url=gitlab.get("url", defaults.gitlab_url),
         labels=data.get("labels", defaults.labels),
         repositories=data.get("repositories", defaults.repositories),
+        discover_all_repositories=data.get("discover_all_repositories", defaults.discover_all_repositories),
         polling_interval=polling.get("interval_seconds", defaults.polling_interval),
         max_issues_per_poll=polling.get("max_issues_per_poll", defaults.max_issues_per_poll),
     )

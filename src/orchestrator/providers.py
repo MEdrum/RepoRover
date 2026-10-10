@@ -54,6 +54,10 @@ class ProviderManager:
             self._providers[provider_type] = provider
         return self._providers[provider_type]
 
+    async def all_providers(self) -> list[GitProvider]:
+        """Return the authenticated providers this configuration uses."""
+        return [await self._ensure_provider(t) for t in self.active_types()]
+
     async def provider_for(self, repository: str) -> GitProvider:
         """Resolve the provider that owns a repository.
 

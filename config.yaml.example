@@ -36,10 +36,15 @@ labels:
 
 # Repository Configuration
 repositories:
-  # Explicit owner/repo entries to monitor. An empty list disables discovery
-  # (there is no "discover all accessible repositories" mode).
+  # Explicit owner/repo entries to monitor.
   - "owner/repo1"
   # - "owner/repo2"
+
+# Instead of the explicit list above, scan every repository accessible to the
+# configured provider token(s), ordered by recent activity. Discovery stops once
+# enough open agent issues are found to fill opencode.max_concurrent, and waits
+# (backpressure) while that many open issues are already being worked.
+discover_all_repositories: false
 
 # Polling Configuration
 polling:

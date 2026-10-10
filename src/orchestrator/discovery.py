@@ -27,58 +27,26 @@ class IssueDiscovery:
         return await self.providers.provider_for(repository)
 
     async def discover_and_queue(self) -> int:
-        """Discover eligible issues and queue them for processing."""
+        """Discover eligible issues and queue them for processing.
+
+        With `discover_all_repositories` enabled, every repository accessible to
+        the configured provider token(s) is scanned (ordered by recent activity)
+        until enough open agent issues are found to fill max_concurrent. If that
+        many open issues are already being worked, discovery waits (backpressure)
+        until the open queue shrinks below max_concurrent.
+        """
+        if self.config.git_provider.discover_all_repositories:
+            return await self._discover_all_repositories()
         if not self.config.git_provider.repositories:
             logger.debug("No repositories configured for discovery")
             return 0
 
         eligible_label = self.config.git_provider.labels.get("eligible", "agent")
-        in_progress_label = self.config.git_provider.labels.get("in_progress", "doing")
-        stuck_label = self.config.git_provider.labels.get("stuck", "stuck")
-        awaiting_review_label = self.config.git_provider.labels.get("awaiting_review", "awaiting review")
-
         queued_count = 0
-
         for repo_spec in self.config.git_provider.repositories:
             try:
-                owner, repo = repo_spec.split("/", 1)
                 provider = await self._get_provider(repo_spec)
-
-                # Discover eligible issues
-                issues = await provider.list_eligible_issues(
-                    owner, repo, label=eligible_label, limit=self.config.git_provider.max_issues_per_poll
-                )
-
-                for issue in issues:
-                    # Check if already in progress or stuck
-                    existing = self.state.get_workflow(repo_spec, issue.number)
-
-                    if existing:
-                        logger.info(
-                            f"Issue {repo_spec}#{issue.number} already in phase {existing.phase.value}, skipping"
-                        )
-                        continue
-
-                    # Check if issue has in_progress or stuck label (another instance might be working on it)
-                    if (
-                        in_progress_label in issue.labels
-                        or stuck_label in issue.labels
-                        or awaiting_review_label in issue.labels
-                    ):
-                        logger.info(f"Issue {repo_spec}#{issue.number} has active label, skipping")
-                        continue
-
-                    # Create new workflow
-                    workflow = WorkflowState(
-                        issue_number=issue.number,
-                        repository=repo_spec,
-                        project=self._get_project_for_repo(repo_spec),
-                        phase=WorkflowPhase.NEW,
-                    )
-                    self.state.set_workflow(workflow)
-                    queued_count += 1
-                    logger.info(f"Queued issue {repo_spec}#{issue.number}: {issue.title}")
-
+                queued_count += await self._discover_repository(provider, repo_spec, eligible_label)
             except ProviderError as e:
                 logger.error(f"Provider error discovering issues in {repo_spec}: {e}")
             except Exception as e:
@@ -86,8 +54,83 @@ class IssueDiscovery:
 
         if queued_count > 0:
             await self.state.save()
-
         return queued_count
+
+    async def _discover_all_repositories(self) -> int:
+        """Discover eligible issues across every accessible repository."""
+        eligible_label = self.config.git_provider.labels.get("eligible", "agent")
+        max_concurrent = self.config.opencode.max_concurrent
+        queued_count = 0
+
+        if self._open_issue_count() >= max_concurrent:
+            logger.info(f"Open agent issues at concurrency limit ({max_concurrent}), skipping discovery")
+            return 0
+
+        for provider in await self.providers.all_providers():
+            try:
+                repositories = await provider.list_repositories()
+            except ProviderError as e:
+                logger.error(f"Provider error listing repositories: {e}")
+                continue
+
+            for repository in repositories:
+                repo_spec = repository.full_name
+                try:
+                    queued_count += await self._discover_repository(provider, repo_spec, eligible_label)
+                except ProviderError as e:
+                    logger.error(f"Provider error discovering issues in {repo_spec}: {e}")
+                except Exception as e:
+                    logger.error(f"Error discovering issues in {repo_spec}: {e}")
+                if self._open_issue_count() >= max_concurrent:
+                    logger.info(f"Reached concurrency limit ({max_concurrent}), stopping repository scan")
+                    if queued_count > 0:
+                        await self.state.save()
+                    return queued_count
+
+        if queued_count > 0:
+            await self.state.save()
+        return queued_count
+
+    def _open_issue_count(self) -> int:
+        """Number of open (active) workflows."""
+        return len(self.state.list_active_workflows())
+
+    async def _discover_repository(self, provider: GitProvider, repo_spec: str, eligible_label: str) -> int:
+        """Queue all eligible issues from a single repository; return the count queued."""
+        in_progress_label = self.config.git_provider.labels.get("in_progress", "doing")
+        stuck_label = self.config.git_provider.labels.get("stuck", "stuck")
+        awaiting_review_label = self.config.git_provider.labels.get("awaiting_review", "awaiting review")
+        queued = 0
+
+        owner, repo = repo_spec.split("/", 1)
+        issues = await provider.list_eligible_issues(
+            owner, repo, label=eligible_label, limit=self.config.git_provider.max_issues_per_poll
+        )
+
+        for issue in issues:
+            existing = self.state.get_workflow(repo_spec, issue.number)
+            if existing:
+                logger.info(f"Issue {repo_spec}#{issue.number} already in phase {existing.phase.value}, skipping")
+                continue
+            if (
+                in_progress_label in issue.labels
+                or stuck_label in issue.labels
+                or awaiting_review_label in issue.labels
+            ):
+                logger.info(f"Issue {repo_spec}#{issue.number} has active label, skipping")
+                continue
+
+            workflow = WorkflowState(
+                issue_number=issue.number,
+                repository=repo_spec,
+                project=self._get_project_for_repo(repo_spec),
+                phase=WorkflowPhase.NEW,
+            )
+            self.state.set_workflow(workflow)
+            queued += 1
+            logger.info(f"Queued issue {repo_spec}#{issue.number}: {issue.title}")
+
+        return queued
 
     def _get_project_for_repo(self, repo_spec: str) -> str:
         """Get project name for repository."""

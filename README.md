@@ -126,6 +126,8 @@ labels:
 repositories:
   - owner/repository
 
+discover_all_repositories: false  # instead, scan every accessible repository
+
 polling:
   interval_seconds: 60
   max_issues_per_poll: 50
@@ -133,13 +135,13 @@ polling:
 retry:
   max_attempts: 3
   base_delay_seconds: 2
-  max_delay_seconds:  ​60
-  exponential_base:​ 2
+  max_delay_seconds: 60
+  exponential_base: 2
 
 opencode:
   api_url: http://opencode:8080
   timeout: 300
-  max_concurrent: 1  # reserved; concurrency not yet enabled
+  max_concurrent: 1  # backpressure/concurrency target for discovery
 
 state:
   state_dir: /data/state
@@ -154,8 +156,11 @@ HTTP Basic auth with user `opencode`; provide the password via the
 `OPENCODE_SERVER_PASSWORD` environment variable rather than `config.yaml`. Do
 not commit `config.yaml`, `.env` files, or tokens.
 
-At present, `repositories` must contain explicit `owner/repository` entries.
-An empty list does not enable repository discovery.
+`repositories` must contain explicit `owner/repository` entries. Set
+`discover_all_repositories: true` instead to scan every repository accessible
+to the configured token(s), ordered by recent activity. Discovery stops once
+enough open agent issues are found to fill `opencode.max_concurrent`, and waits
+(backpressure) while that many open issues are already being worked.
 
 ## Run with Docker Compose
 

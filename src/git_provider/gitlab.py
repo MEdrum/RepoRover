@@ -193,7 +193,7 @@ class GitLabProvider(GitProvider):
             if owner:
                 projects = self._client.projects.list(owned=True, membership=True, search=owner, get_all=True)
             else:
-                projects = self._client.projects.list(membership=True, get_all=True)
+                projects = self._client.projects.list(membership=True, order_by="last_activity_at", get_all=True)
             return [self._project_to_model(p) for p in projects]
         except Exception as e:
             self._handle_gitlab_exception(e, f"list_repositories({owner})")

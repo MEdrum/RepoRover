@@ -84,6 +84,17 @@ class TestConfigDefaultsAndSecrets:
         assert not hasattr(config, "memory")
         assert not hasattr(config.git_provider, "rate_limit")
 
+    def test_discover_all_repositories_flag(self):
+        config = OrchestratorConfig.from_dict({"github": {"token": "t"}})
+        assert config.git_provider.discover_all_repositories is False
+        config = OrchestratorConfig.from_dict(
+            {
+                "github": {"token": "t"},
+                "discover_all_repositories": True,
+            }
+        )
+        assert config.git_provider.discover_all_repositories is True
+
 
 class TestValidation:
     def test_invalid_repository_syntax_is_rejected(self):

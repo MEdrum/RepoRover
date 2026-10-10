@@ -124,6 +124,11 @@ impact.
   allowed paths, test commands, and OpenCode policy.
 - [ ] Global and per-repository concurrency limits using
   `max_concurrent`, with fair scheduling and backpressure.
+  - Add another flag to allow concurrent issues from the same repository. When
+    there are not enough different repositories to max the concurrency setting,
+    and the flag is enabled, fork a session that has already analyzed the
+    repository, in order to work on issues from the same project in parallel
+    without repeating the same work twice.
 - [ ] Human approval gates before implementation, before opening a PR/MR, and
   before retrying destructive operations.
 - [ ] CI-aware verification that waits for provider checks and feeds failed
