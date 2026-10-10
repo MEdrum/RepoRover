@@ -10,7 +10,7 @@ from orchestrator.main import IssueOrchestrator
 class TestIssueOrchestratorWiring:
     def test_discovery_shares_orchestrator_state(self, tmp_path):
         config = OrchestratorConfig.from_dict({
-            "git_provider": {"repositories": ["owner/repo"]},
+            "git_provider": {"repositories": ["owner/repo"], "github": {"token": "t"}},
             "state": {"state_dir": str(tmp_path)},
         })
         orchestrator = IssueOrchestrator(config)
@@ -20,6 +20,7 @@ class TestIssueOrchestratorWiring:
         config = OrchestratorConfig.from_dict({
             "git_provider": {
                 "repositories": ["owner/repo"],
+                "github": {"token": "t"},
                 "polling": {"interval_seconds": 123},
             },
             "state": {"state_dir": str(tmp_path)},
@@ -46,12 +47,13 @@ class TestIssueOrchestratorWiring:
 class TestIssueOrchestratorShutdown:
     def test_stop_closes_opencode_clients(self, tmp_path):
         config = OrchestratorConfig.from_dict({
-            "git_provider": {"repositories": ["owner/repo"]},
+            "git_provider": {"repositories": ["owner/repo"], "github": {"token": "t"}},
             "state": {"state_dir": str(tmp_path)},
         })
         orchestrator = IssueOrchestrator(config)
-        with mock.patch.object(orchestrator.opencode, "close", new_callable=mock.AsyncMock) as oc_close:
-            with mock.patch.object(orchestrator.workflow, "close", new_callable=mock.AsyncMock) as wf_close:
-                asyncio.run(orchestrator.stop())
+        with mock.patch.object(orchestrator.opencode, "close", new_callable=mock.AsyncMock) as oc_close, mock.patch.object(
+            orchestrator.workflow, "close", new_callable=mock.AsyncMock
+        ) as wf_close:
+            asyncio.run(orchestrator.stop())
         assert oc_close.await_count == 1
         assert wf_close.await_count == 1

@@ -81,21 +81,46 @@ class OrchestratorConfig:
 
     def validate(self) -> None:
         """Validate the configuration and fail fast with actionable errors."""
-        provider = self.git_provider.provider
-        if provider not in ("github", "gitlab", "both"):
+        gp = self.git_provider
+
+        if gp.provider not in ("github", "gitlab", "both"):
             raise ValueError(
-                f"Unsupported git provider: {provider!r}. "
+                f"Unsupported git provider: {gp.provider!r}. "
                 f"Supported values: 'github', 'gitlab', 'both'."
             )
-        if provider == "both":
-            if not self.git_provider.github_token:
-                raise ValueError("provider 'both' requires a GitHub token (config github.token or GITHUB_TOKEN)")
-            if not self.git_provider.gitlab_token:
-                raise ValueError("provider 'both' requires a GitLab token (config gitlab.token or GITLAB_TOKEN)")
+        if gp.provider in ("github", "both") and not gp.github_token:
+            raise ValueError("git provider requires a GitHub token (config github.token or GITHUB_TOKEN)")
+        if gp.provider in ("gitlab", "both") and not gp.gitlab_token:
+            raise ValueError("git provider requires a GitLab token (config gitlab.token or GITLAB_TOKEN)")
+
+        for repo in gp.repositories:
+            owner, _, name = repo.partition("/")
+            if not owner or not name:
+                raise ValueError(f"Invalid repository spec: {repo!r}. Expected 'owner/repo'.")
+
+        if gp.polling_interval <= 0:
+            raise ValueError(f"polling.interval_seconds must be positive, got {gp.polling_interval}")
+        if gp.max_issues_per_poll <= 0:
+            raise ValueError(f"polling.max_issues_per_poll must be positive, got {gp.max_issues_per_poll}")
+
+        for key, label in gp.labels.items():
+            if not isinstance(label, str) or not label.strip():
+                raise ValueError(f"labels.{key} must be a non-empty string, got {label!r}")
+
         if not self.opencode.api_url:
             raise ValueError("opencode.api_url must not be empty")
         if self.opencode.timeout <= 0:
             raise ValueError(f"opencode.timeout must be positive, got {self.opencode.timeout}")
+
+        if self.retry.max_attempts < 1:
+            raise ValueError(f"retry.max_attempts must be at least 1, got {self.retry.max_attempts}")
+        if self.retry.base_delay_seconds < 0 or self.retry.max_delay_seconds < 0:
+            raise ValueError("retry delays must not be negative")
+        if self.retry.exponential_base < 1:
+            raise ValueError(f"retry.exponential_base must be at least 1, got {self.retry.exponential_base}")
+
+        if not self.state.state_dir.strip():
+            raise ValueError("state.state_dir must not be empty")
 
 
 def _git_provider_from_dict(data: dict) -> GitProviderConfig:

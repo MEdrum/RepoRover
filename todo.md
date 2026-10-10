@@ -59,11 +59,11 @@ impact.
 
 ## Correctness and reliability issues
 
-- [ ] Add configuration validation for provider names, repository syntax,
+- [x] Add configuration validation for provider names, repository syntax,
   positive intervals/timeouts, required tokens, label values, and state
   directory writability. Fail fast with actionable messages instead of
   allowing partially valid configuration.
-- [ ] Remove the misleading “empty repositories means all accessible
+- [x] Remove the misleading “empty repositories means all accessible
   repositories” behavior from documentation or implement repository discovery.
   `discover_and_queue()` currently returns immediately when the list is empty.
 - [ ] Avoid broad exception handling that converts malformed state, malformed
