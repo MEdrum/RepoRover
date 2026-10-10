@@ -146,4 +146,4 @@ class TestRecoverResources:
         with mock.patch("git_provider.create_provider", side_effect=RuntimeError("nope")):
             report = asyncio.run(manager.recover())
         assert report["errors"]
-        assert report["checked"] == 0
+        assert report["checked"] == 1

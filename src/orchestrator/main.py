@@ -15,6 +15,7 @@ from typing import Optional
 import yaml
 
 from orchestrator.config import OrchestratorConfig
+from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState
 from orchestrator.discovery import IssueDiscovery
 from orchestrator.workflow import WorkflowManager
@@ -29,8 +30,9 @@ class IssueOrchestrator:
     def __init__(self, config: OrchestratorConfig):
         self.config = config
         self.state = OrchestratorState(config.state.state_dir)
-        self.discovery = IssueDiscovery(config, self.state)
-        self.workflow = WorkflowManager(config, self.state)
+        self.providers = ProviderManager(config)
+        self.discovery = IssueDiscovery(config, self.state, self.providers)
+        self.workflow = WorkflowManager(config, self.state, self.providers)
         self.opencode = OpenCodeClient(config)
         self._running = False
         self._tasks = []

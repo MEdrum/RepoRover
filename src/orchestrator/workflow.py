@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
+from orchestrator.providers import ProviderManager
 from orchestrator.opencode import OpenCodeClient, OpenCodeResult, OpenCodeTask
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 
@@ -29,38 +30,19 @@ class WorkflowResult:
 class WorkflowManager:
     """Manages workflow processing."""
     
-    def __init__(self, config: OrchestratorConfig, state: OrchestratorState):
+    def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager = None):
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
-        self._provider: GitProvider | None = None
+        self.providers = providers or ProviderManager(config)
     
     async def close(self):
         """Close owned HTTP clients."""
         await self.opencode.close()
     
-    async def _get_provider(self) -> GitProvider:
-        """Get or create Git provider."""
-        if self._provider is None:
-            from git_provider import ProviderType, create_provider
-            provider_type = ProviderType.GITHUB if self.config.git_provider.provider in ("github", "both") else ProviderType.GITLAB
-            provider_config = {}
-            
-            if provider_type == ProviderType.GITHUB:
-                provider_config = {
-                    "token": self.config.git_provider.github_token,
-                    "base_url": self.config.git_provider.github_base_url
-                }
-            else:
-                provider_config = {
-                    "token": self.config.git_provider.gitlab_token,
-                    "url": self.config.git_provider.gitlab_url
-                }
-            
-            self._provider = create_provider(provider_type, provider_config)
-            await self._provider.authenticate()
-        
-        return self._provider
+    async def _get_provider(self, repository: str) -> GitProvider:
+        """Get the provider that owns a repository."""
+        return await self.providers.provider_for(repository)
     
     async def process_queue(self) -> int:
         """Process all active workflows."""
@@ -132,17 +114,13 @@ class WorkflowManager:
             "missing_pull_requests": [],
             "errors": [],
         }
-        try:
-            provider = await self._get_provider()
-        except Exception as e:  # noqa: BLE001 - recovery must not crash startup
-            report["errors"].append(f"Provider unavailable: {e}")
-            return report
         
         for workflow in self.state.list_workflows():
             key = f"{workflow.repository}#{workflow.issue_number}"
             report["checked"] += 1
             try:
                 owner, repo = workflow.repository.split("/", 1)
+                provider = await self._get_provider(workflow.repository)
                 
                 if workflow.branch and workflow.phase not in (WorkflowPhase.NEW, WorkflowPhase.FAILED):
                     try:
@@ -269,7 +247,7 @@ class WorkflowManager:
 
     async def _phase_new(self, workflow: WorkflowState) -> WorkflowResult:
         """Initialize new workflow."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         in_progress_label = self.config.git_provider.labels.get("in_progress", "doing")
         eligible_label = self.config.git_provider.labels.get("eligible", "agent")
         
@@ -308,7 +286,7 @@ class WorkflowManager:
     
     async def _phase_planning(self, workflow: WorkflowState) -> WorkflowResult:
         """Planning phase - analyze issue and create plan."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         
         try:
             owner, repo = workflow.repository.split("/", 1)
@@ -353,7 +331,7 @@ class WorkflowManager:
     
     async def _phase_verification_design(self, workflow: WorkflowState) -> WorkflowResult:
         """Verification design phase - determine verification strategy."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         
         try:
             owner, repo = workflow.repository.split("/", 1)
@@ -402,7 +380,7 @@ class WorkflowManager:
     
     async def _phase_write_tests(self, workflow: WorkflowState) -> WorkflowResult:
         """Write tests phase."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         
         try:
             owner, repo = workflow.repository.split("/", 1)
@@ -437,7 +415,7 @@ class WorkflowManager:
     
     async def _phase_implementing(self, workflow: WorkflowState) -> WorkflowResult:
         """Implementation phase."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         
         try:
             owner, repo = workflow.repository.split("/", 1)
@@ -472,7 +450,7 @@ class WorkflowManager:
     
     async def _phase_verify(self, workflow: WorkflowState) -> WorkflowResult:
         """Verification phase."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         
         try:
             owner, repo = workflow.repository.split("/", 1)
@@ -517,7 +495,7 @@ class WorkflowManager:
     
     async def _phase_awaiting_review(self, workflow: WorkflowState) -> WorkflowResult:
         """Create PR/MR and await human review."""
-        provider = await self._get_provider()
+        provider = await self._get_provider(workflow.repository)
         awaiting_review_label = self.config.git_provider.labels.get("awaiting_review", "awaiting review")
         in_progress_label = self.config.git_provider.labels.get("in_progress", "doing")
         
