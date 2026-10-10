@@ -76,6 +76,10 @@ class IssueOrchestrator:
         # Save state
         await self.state.save()
         
+        # Close owned HTTP clients
+        await self.opencode.close()
+        await self.workflow.close()
+        
         logger.info("Issue Orchestrator stopped")
     
     async def _discovery_loop(self):

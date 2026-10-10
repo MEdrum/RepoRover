@@ -267,3 +267,11 @@ class TestOpenCodeTaskPolling:
         assert workflow.opencode_run_id == ""
         assert manager.opencode.status_calls == 1
         assert manager.opencode.run_calls == 1
+
+
+class TestShutdown:
+    def test_close_closes_opencode_client(self, tmp_path):
+        manager = _manager(tmp_path)
+        with mock.patch.object(manager.opencode, "close", new_callable=mock.AsyncMock) as close_mock:
+            asyncio.run(manager.close())
+        assert close_mock.await_count == 1

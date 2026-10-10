@@ -35,6 +35,10 @@ class WorkflowManager:
         self.opencode = OpenCodeClient(config)
         self._provider: GitProvider | None = None
     
+    async def close(self):
+        """Close owned HTTP clients."""
+        await self.opencode.close()
+    
     async def _get_provider(self) -> GitProvider:
         """Get or create Git provider."""
         if self._provider is None:

@@ -43,7 +43,7 @@ impact.
   reconciliation, but startup only loads JSON state. There is no recovery pass
   that checks in-flight OpenCode runs, existing branches, existing PRs/MRs, or
   the provider labels before resuming.
-- [ ] **Close HTTP clients during shutdown (P2).** `IssueOrchestrator.stop()`
+- [x] **Close HTTP clients during shutdown (P2).** `IssueOrchestrator.stop()`
   does not close its OpenCode client, and `WorkflowManager` owns a second
   OpenCode client that is also never closed. Add lifecycle ownership and close
   both clients.
