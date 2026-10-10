@@ -17,7 +17,7 @@ impact.
   reads `self.config.polling_interval`, but the attribute lives at
   `self.config.git_provider.polling_interval`. The discovery loop raises
   `AttributeError` after its first poll and never sleeps/repeats normally.
-- [ ] **Implement or reject `provider: both` (P1).** Both provider-selection
+- [x] **Implement or reject `provider: both` (P1).** Both provider-selection
   paths choose GitHub whenever the value is `"both"`; GitLab is never
   discovered or processed in that mode. Either run separate provider adapters
   and route repositories explicitly, or validate the configuration and reject

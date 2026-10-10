@@ -128,7 +128,17 @@ class OrchestratorConfig:
         
         config.log_level = data.get("log_level", "INFO")
         
+        config.validate()
         return config
+    
+    def validate(self) -> None:
+        """Validate the configuration and fail fast with actionable errors."""
+        if self.git_provider.provider not in ("github", "gitlab"):
+            raise ValueError(
+                f"Unsupported git provider: {self.git_provider.provider!r}. "
+                f"'both' is not implemented: configure one provider per instance "
+                f"(run a separate orchestrator per provider) or remove the value."
+            )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
