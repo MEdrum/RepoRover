@@ -3,7 +3,7 @@
 import asyncio
 from unittest import mock
 
-from git_provider import Issue
+from git_provider import Issue, NotFoundError, ProviderType
 from orchestrator.config import OrchestratorConfig
 from orchestrator.discovery import IssueDiscovery
 from orchestrator.state import OrchestratorState, WorkflowPhase
@@ -29,12 +29,18 @@ def _issue(number=1):
 class FakeProvider:
     """Minimal fake Git provider for discovery tests."""
 
-    def __init__(self, issues=None):
+    def __init__(self, issues=None, repos=()):
         self.issues = issues or []
+        self.repos = set(repos)
         self.list_eligible_calls = []
 
     async def authenticate(self):
         return True
+
+    async def get_repository(self, owner, repo):
+        if f"{owner}/{repo}" in self.repos:
+            return object()
+        raise NotFoundError("not found")
 
     async def list_eligible_issues(self, owner, repo, label="agent", limit=100):
         self.list_eligible_calls.append((owner, repo, label, limit))
@@ -53,7 +59,7 @@ class TestIssueDiscoveryStateSharing:
         state = OrchestratorState(str(tmp_path))
         discovery = IssueDiscovery(_config(str(tmp_path)), state)
         fake = FakeProvider(issues=[_issue()])
-        with mock.patch("orchestrator.discovery.create_provider", return_value=fake):
+        with mock.patch("git_provider.create_provider", return_value=fake):
             queued = asyncio.run(discovery.discover_and_queue())
         assert queued == 1
         workflow = state.get_workflow("owner/repo", 1)
@@ -65,10 +71,35 @@ class TestIssueDiscoveryStateSharing:
         state = OrchestratorState(str(tmp_path))
         discovery = IssueDiscovery(_config(str(tmp_path)), state)
         fake = FakeProvider(issues=[_issue()])
-        with mock.patch("orchestrator.discovery.create_provider", return_value=fake):
+        with mock.patch("git_provider.create_provider", return_value=fake):
             first = asyncio.run(discovery.discover_and_queue())
             second = asyncio.run(discovery.discover_and_queue())
         assert first == 1
         assert second == 0
         workflow = state.get_workflow("owner/repo", 1)
         assert workflow is not None
+
+
+class TestDiscoveryWithBothProviders:
+    def test_discovers_from_both_providers(self, tmp_path):
+        config = OrchestratorConfig()
+        config.git_provider.provider = "both"
+        config.git_provider.repositories = ["ghorg/repo", "glorg/repo"]
+        config.state.state_dir = str(tmp_path)
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(config, state)
+        github = FakeProvider(issues=[_issue(1)], repos=["ghorg/repo"])
+        gitlab = FakeProvider(issues=[_issue(2)], repos=["glorg/repo"])
+
+        def _create(provider_type, cfg):
+            if provider_type == ProviderType.GITHUB:
+                return github
+            return gitlab
+
+        with mock.patch("git_provider.create_provider", side_effect=_create):
+            queued = asyncio.run(discovery.discover_and_queue())
+        assert queued == 2
+        assert state.get_workflow("ghorg/repo", 1) is not None
+        assert state.get_workflow("glorg/repo", 2) is not None
+        assert github.list_eligible_calls[0][:2] == ("ghorg", "repo")
+        assert gitlab.list_eligible_calls[0][:2] == ("glorg", "repo")

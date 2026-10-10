@@ -5,12 +5,13 @@ Discovers eligible issues from Git provider and queues them for processing.
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 from dataclasses import dataclass
 
 from orchestrator.config import OrchestratorConfig
+from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState, WorkflowState, WorkflowPhase
-from git_provider import create_provider, ProviderType, GitProvider, ProviderError
+from git_provider import GitProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -27,32 +28,14 @@ class DiscoveredIssue:
 class IssueDiscovery:
     """Discovers and queues eligible issues."""
     
-    def __init__(self, config: OrchestratorConfig, state: OrchestratorState):
+    def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager = None):
         self.config = config
         self.state = state
-        self._provider: Optional[GitProvider] = None
+        self.providers = providers or ProviderManager(config)
     
-    async def _get_provider(self) -> GitProvider:
-        """Get or create Git provider."""
-        if self._provider is None:
-            provider_type = ProviderType.GITHUB if self.config.git_provider.provider in ("github", "both") else ProviderType.GITLAB
-            provider_config = {}
-            
-            if provider_type == ProviderType.GITHUB:
-                provider_config = {
-                    "token": self.config.git_provider.github_token,
-                    "base_url": self.config.git_provider.github_base_url
-                }
-            else:
-                provider_config = {
-                    "token": self.config.git_provider.gitlab_token,
-                    "url": self.config.git_provider.gitlab_url
-                }
-            
-            self._provider = create_provider(provider_type, provider_config)
-            await self._provider.authenticate()
-        
-        return self._provider
+    async def _get_provider(self, repository: str) -> GitProvider:
+        """Get the provider that owns a repository."""
+        return await self.providers.provider_for(repository)
     
     async def discover_and_queue(self) -> int:
         """Discover eligible issues and queue them for processing."""
@@ -60,7 +43,6 @@ class IssueDiscovery:
             logger.debug("No repositories configured for discovery")
             return 0
         
-        provider = await self._get_provider()
         eligible_label = self.config.git_provider.labels.get("eligible", "agent")
         in_progress_label = self.config.git_provider.labels.get("in_progress", "doing")
         stuck_label = self.config.git_provider.labels.get("stuck", "stuck")
@@ -71,6 +53,7 @@ class IssueDiscovery:
         for repo_spec in self.config.git_provider.repositories:
             try:
                 owner, repo = repo_spec.split("/", 1)
+                provider = await self._get_provider(repo_spec)
                 
                 # Check if we already have an active workflow for this repo
                 active_workflows = self.state.list_active_workflows()
@@ -130,9 +113,9 @@ class IssueDiscovery:
         
         for workflow in stuck_workflows:
             # Check if issue still has stuck label
-            provider = await self._get_provider()
             try:
                 owner, repo = workflow.repository.split("/", 1)
+                provider = await self._get_provider(workflow.repository)
                 issue = await provider.get_issue(owner, repo, workflow.issue_number)
                 
                 stuck_label = self.config.git_provider.labels.get("stuck", "stuck")

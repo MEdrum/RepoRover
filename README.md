@@ -106,7 +106,7 @@ Copy [`config.yaml.example`](config.yaml.example) to `config.yaml` and provide
 credentials out of source control. The supported top-level shape is:
 
 ```yaml
-provider: github # github or gitlab; "both" is rejected at startup
+provider: github # github, gitlab, or both (routes repos to the provider that owns them)
 
 github:
   token: ""

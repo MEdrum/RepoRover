@@ -17,11 +17,11 @@ impact.
   reads `self.config.polling_interval`, but the attribute lives at
   `self.config.git_provider.polling_interval`. The discovery loop raises
   `AttributeError` after its first poll and never sleeps/repeats normally.
-- [x] **Implement or reject `provider: both` (P1).** Both provider-selection
-  paths choose GitHub whenever the value is `"both"`; GitLab is never
-  discovered or processed in that mode. Either run separate provider adapters
-  and route repositories explicitly, or validate the configuration and reject
-  the unsupported value.
+- [x] **`provider: both` runs separate provider adapters and routes
+  repositories.** A shared `ProviderManager` runs GitHub and GitLab side by
+  side and routes each repository to the provider that owns it (probed
+  GitHub-first, cached per repository). Config validation requires both tokens
+  when `both` is selected.
 - [x] **Make workflow side effects idempotent (P1).** `_phase_new` persists the
   branch and phase before its initial comment completes, and
   `_phase_awaiting_review` creates the PR/MR before labels and the final

@@ -1,7 +1,9 @@
 # Git Provider Configuration
 # Copy this to config.yaml and fill in your credentials
 
-# Provider selection: "github" or "gitlab" ("both" is rejected at startup)
+# Provider selection: "github", "gitlab", or "both" (discover/process issues on
+# both providers; repositories are routed to the provider that owns them, probed
+# GitHub-first. "both" requires both tokens.)
 provider: "github"
 
 # GitHub Configuration

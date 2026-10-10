@@ -133,12 +133,17 @@ class OrchestratorConfig:
     
     def validate(self) -> None:
         """Validate the configuration and fail fast with actionable errors."""
-        if self.git_provider.provider not in ("github", "gitlab"):
+        provider = self.git_provider.provider
+        if provider not in ("github", "gitlab", "both"):
             raise ValueError(
-                f"Unsupported git provider: {self.git_provider.provider!r}. "
-                f"'both' is not implemented: configure one provider per instance "
-                f"(run a separate orchestrator per provider) or remove the value."
+                f"Unsupported git provider: {provider!r}. "
+                f"Supported values: 'github', 'gitlab', 'both'."
             )
+        if provider == "both":
+            if not self.git_provider.github_token:
+                raise ValueError("provider 'both' requires a GitHub token (config github.token or GITHUB_TOKEN)")
+            if not self.git_provider.gitlab_token:
+                raise ValueError("provider 'both' requires a GitLab token (config gitlab.token or GITLAB_TOKEN)")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
