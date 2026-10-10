@@ -10,16 +10,15 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
 from orchestrator.config import OrchestratorConfig
+from orchestrator.discovery import IssueDiscovery
+from orchestrator.opencode import OpenCodeClient
 from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState
-from orchestrator.discovery import IssueDiscovery
 from orchestrator.workflow import WorkflowManager
-from orchestrator.opencode import OpenCodeClient
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +90,11 @@ class IssueOrchestrator:
                 await self.discovery.discover_and_queue()
             except Exception as e:
                 logger.error(f"Discovery error: {e}")
-            
+            try:
+                await self.discovery.requeue_stuck_workflows()
+            except Exception as e:
+                logger.error(f"Stuck workflow check error: {e}")
+
             # Wait for next poll interval
             await asyncio.sleep(self.config.git_provider.polling_interval)
     

@@ -8,19 +8,17 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import httpx
 from github import Github, GithubException, RateLimitExceededException
 from github.Repository import Repository as GHRepository
 from github.Issue import Issue as GHIssue
 from github.Label import Label as GHLabel
 from github.PullRequest import PullRequest as GHPullRequest
 from github.Branch import Branch as GHBranch
-from github.Commit import Commit as GHCommit
 
 from . import (
     GitProvider, ProviderError, AuthenticationError, PermissionError,
     NotFoundError, RateLimitError, NetworkError, ValidationError,
-    ConflictError, TemporaryProviderError, UnsupportedOperationError,
+    ConflictError, TemporaryProviderError,
     Repository, Issue, Comment, Label, PullRequest, Branch, CIStatus
 )
 

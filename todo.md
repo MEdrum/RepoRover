@@ -84,7 +84,7 @@ impact.
 - [ ] Verify merge-request API compatibility for the pinned `python-gitlab`
   version, especially `merge_method` and `mr.draft`; add mocked adapter tests
   rather than relying on live credentials.
-- [ ] Replace the manual integration script in
+- [x] Replace the manual integration script in
   [`test_adapters.py`](test_adapters.py) with isolated unit tests using mocked
   provider/OpenCode clients. The current script reads live credentials and can
   mutate/read real repositories.
@@ -97,7 +97,7 @@ impact.
 
 ## Unclean or incomplete implementation
 
-- [ ] Remove unused imports and duplicated provider/client construction.
+- [x] Remove unused imports and duplicated provider/client construction.
 - [x] Use timezone-aware UTC timestamps instead of deprecated naive
   `datetime.utcnow()`.
 - [ ] Replace magic values (`5` second workflow delay, `5000` GitHub limit,

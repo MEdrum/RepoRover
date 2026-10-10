@@ -5,24 +5,13 @@ Discovers eligible issues from Git provider and queues them for processing.
 """
 
 import logging
-from typing import List
-from dataclasses import dataclass
 
+from git_provider import GitProvider, ProviderError
 from orchestrator.config import OrchestratorConfig
 from orchestrator.providers import ProviderManager
-from orchestrator.state import OrchestratorState, WorkflowState, WorkflowPhase
-from git_provider import GitProvider, ProviderError
+from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class DiscoveredIssue:
-    """An issue discovered as eligible for processing."""
-    repository: str
-    issue_number: int
-    title: str
-    labels: List[str]
 
 
 class IssueDiscovery:
@@ -54,11 +43,7 @@ class IssueDiscovery:
             try:
                 owner, repo = repo_spec.split("/", 1)
                 provider = await self._get_provider(repo_spec)
-                
-                # Check if we already have an active workflow for this repo
-                active_workflows = self.state.list_active_workflows()
-                repo_active = any(wf.repository == repo_spec for wf in active_workflows)
-                
+
                 # Discover eligible issues
                 issues = await provider.list_eligible_issues(
                     owner, repo, 

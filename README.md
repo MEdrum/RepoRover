@@ -190,19 +190,17 @@ resources it finds.
 
 ## Testing
 
-The current [`test_adapters.py`](test_adapters.py) script is a live smoke test.
-It reads `config.yaml`, authenticates with a configured provider, and may list
-issues and labels in the first configured repository:
+The project has an isolated, mocked unit-test suite (no live credentials or
+network access required):
 
 ```bash
-python test_adapters.py
+.venv/bin/python -m pytest tests/ -q
 ```
 
-It requires real credentials and network access. There is currently no isolated
-unit-test suite. A syntax check that does not contact providers is:
+A syntax check that does not contact providers is:
 
 ```bash
-python -m compileall -q src test_adapters.py
+python3 -m compileall -q src
 ```
 
 ## Security notes
@@ -223,7 +221,7 @@ Contributions are welcome. Before opening a pull request:
 3. Run the syntax check and any relevant tests:
 
    ```bash
-   python -m compileall -q src test_adapters.py
+   python -m compileall -q src
    ```
 
 4. Explain the motivation, implementation, and verification in the pull
