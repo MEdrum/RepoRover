@@ -138,21 +138,20 @@ retry:
 opencode:
   api_url: http://opencode:8080
   timeout: 300
-  max_concurrent: 1
+  max_concurrent: 1  # reserved; concurrency not yet enabled
 
 state:
   state_dir: /data/state
   max_history: 1000
 
-memory:
-  api_url: http://agent-memory:8000/api/v1
-  enabled: false
-
 log_level: INFO
 ```
 
-`GITHUB_TOKEN` and `GITLAB_TOKEN` are used as fallbacks when the corresponding
-YAML token is empty. Do not commit `config.yaml`, `.env` files, or tokens.
+`GITHUB_TOKEN`, `GITLAB_TOKEN`, and `OPENCODE_SERVER_PASSWORD` are used as
+fallbacks when the corresponding YAML value is empty. The OpenCode server uses
+HTTP Basic auth with user `opencode`; provide the password via the
+`OPENCODE_SERVER_PASSWORD` environment variable rather than `config.yaml`. Do
+not commit `config.yaml`, `.env` files, or tokens.
 
 At present, `repositories` must contain explicit `owner/repository` entries.
 An empty list does not enable repository discovery.
