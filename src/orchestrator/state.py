@@ -150,6 +150,10 @@ class OrchestratorState:
                 active.append(wf)
         return active
     
+    def list_workflows(self) -> list[WorkflowState]:
+        """List all workflows."""
+        return list(self._workflows.values())
+    
     def list_stuck_workflows(self) -> List[WorkflowState]:
         """List stuck workflows."""
         return [wf for wf in self._workflows.values() if wf.phase == WorkflowPhase.STUCK]

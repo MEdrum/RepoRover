@@ -39,7 +39,7 @@ impact.
   creation. Repositories whose default branch is `master`, `develop`, or
   another name will fail or create the branch from the wrong base. Fetch the
   repository metadata before creating the workflow/branch.
-- [ ] **Complete restart recovery (P1).** The README describes label/branch
+- [x] **Complete restart recovery (P1).** The README describes label/branch
   reconciliation, but startup only loads JSON state. There is no recovery pass
   that checks in-flight OpenCode runs, existing branches, existing PRs/MRs, or
   the provider labels before resuming.

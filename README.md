@@ -78,9 +78,10 @@ eligible issue
     -> COMPLETED (PR/MR created)
 ```
 
-`STUCK` and `FAILED` are also represented in the state model. The current
-implementation does not yet provide complete restart reconciliation, bounded
-retry handling, CI polling, or merge tracking.
+`STUCK` and `FAILED` are also represented in the state model. On startup the
+orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
+against the persisted state. The current implementation does not yet provide
+CI polling or merge tracking.
 
 ## Architecture
 
@@ -181,8 +182,9 @@ The intended state files are:
 - `/data/state/history.jsonl`
 
 The state model records the repository, issue, phase, branch, plans, timestamps,
-errors, and metadata. State recovery and partial external-operation recovery
-still need to be completed before unattended operation is safe.
+errors, and metadata. On startup the orchestrator reconciles labels, branches,
+and open PRs/MRs against the provider before resuming, and logs any missing
+resources it finds.
 
 ## Testing
 

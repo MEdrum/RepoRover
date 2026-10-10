@@ -43,6 +43,13 @@ class IssueOrchestrator:
         # Load persisted state
         await self.state.load()
         
+        # Reconcile provider-side resources before resuming
+        report = await self.workflow.recover()
+        if report.get("errors"):
+            logger.warning(f"Recovery reported {len(report['errors'])} errors")
+        if report.get("missing_branches") or report.get("missing_pull_requests"):
+            logger.warning(f"Recovery found missing resources: {report}")
+        
         # Start discovery loop
         discovery_task = asyncio.create_task(self._discovery_loop())
         self._tasks.append(discovery_task)
