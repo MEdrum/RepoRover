@@ -13,7 +13,7 @@ from git_provider import (
     Repository,
 )
 from orchestrator.config import OrchestratorConfig
-from orchestrator.opencode import OpenCodeResult
+from orchestrator.opencode import OpenCodeError, OpenCodeResult
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow import WorkflowManager
 from orchestrator.workflow.phases import (
@@ -265,3 +265,61 @@ class TestShutdown:
         with mock.patch.object(manager.opencode, "close", new_callable=mock.AsyncMock) as close_mock:
             asyncio.run(manager.close())
         assert close_mock.await_count == 1
+
+
+class RaisingProvider:
+    """Provider whose get_issue always raises a given exception."""
+
+    def __init__(self, exc):
+        self.exc = exc
+
+    async def authenticate(self):
+        return True
+
+    async def get_issue(self, owner, repo, number):
+        raise self.exc
+
+
+class TestErrorCategorization:
+    def test_provider_error_is_categorized(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = RaisingProvider(ProviderError("rate limited", category="rate_limited"))
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager._process_workflow(workflow))
+        assert not result.success
+        assert result.error_category == "rate_limited"
+
+    def test_opencode_error_is_categorized(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = RaisingProvider(OpenCodeError("boom"))
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager._process_workflow(workflow))
+        assert not result.success
+        assert result.error_category == "opencode"
+
+    def test_internal_error_is_categorized(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = RaisingProvider(RuntimeError("bug"))
+        workflow = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager._process_workflow(workflow))
+        assert not result.success
+        assert result.error_category == "internal"
+
+    def test_failing_workflow_does_not_block_others(self, tmp_path):
+        manager = _manager(tmp_path)
+        bad_provider = RaisingProvider(RuntimeError("bug"))
+        bad = WorkflowState(issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.PLANNING, branch="agent/1-fix-bug")
+        good = WorkflowState(issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK)
+        manager.state.set_workflow(bad)
+        manager.state.set_workflow(good)
+        with mock.patch("git_provider.create_provider", return_value=bad_provider):
+            processed = asyncio.run(manager.process_queue())
+        assert processed == 1
+        bad_wf = manager.state.get_workflow("owner/repo", 1)
+        assert "[internal]" in bad_wf.last_error

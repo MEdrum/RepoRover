@@ -66,7 +66,7 @@ impact.
 - [x] Remove the misleading “empty repositories means all accessible
   repositories” behavior from documentation or implement repository discovery.
   `discover_and_queue()` currently returns immediately when the list is empty.
-- [ ] Avoid broad exception handling that converts malformed state, malformed
+- [x] Avoid broad exception handling that converts malformed state, malformed
   API payloads, and programming errors into silent retries or generic
   `FAILED` states. Preserve exception categories and include structured context.
 - [x] Make state writes atomic (`temporary file` + `os.replace`) and protect

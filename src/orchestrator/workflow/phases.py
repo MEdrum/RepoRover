@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from git_provider import GitProvider, NotFoundError
+from orchestrator.errors import classify_exception
 from orchestrator.opencode import OpenCodeTask
 from orchestrator.state import WorkflowPhase, WorkflowState
 from orchestrator.workflow.prompts import (
@@ -34,6 +35,7 @@ class WorkflowResult:
     success: bool
     next_phase: WorkflowPhase | None = None
     error: str = ""
+    error_category: str = ""
     metadata: dict = None
     pending: bool = False
 
@@ -178,8 +180,8 @@ async def phase_new(manager, workflow: WorkflowState) -> WorkflowResult:
             f"## Agent started\n\n**Branch:** `{branch_name}`\n**Base:** `{workflow.base_branch}`\n\nStarting planning phase...",
         )
         return WorkflowResult(success=True, next_phase=WorkflowPhase.PLANNING)
-    except Exception as e:  # noqa: BLE001
-        return WorkflowResult(success=False, error=f"Failed to initialize workflow: {e}")
+    except Exception as e:  # noqa: BLE001 - convert to a recoverable failure result
+        return WorkflowResult(success=False, error=f"Failed to initialize workflow: {e}", error_category=classify_exception(e))
 
 
 async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowResult:
@@ -205,8 +207,8 @@ async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowRes
         workflow.phase = WorkflowPhase.COMPLETED
         manager.state.set_workflow(workflow)
         return WorkflowResult(success=True, next_phase=WorkflowPhase.COMPLETED)
-    except Exception as e:  # noqa: BLE001
-        return WorkflowResult(success=False, error=f"Failed to create PR/MR: {e}")
+    except Exception as e:  # noqa: BLE001 - convert to a recoverable failure result
+        return WorkflowResult(success=False, error=f"Failed to create PR/MR: {e}", error_category=classify_exception(e))
 
 
 async def phase_stuck(manager, workflow: WorkflowState) -> WorkflowResult:

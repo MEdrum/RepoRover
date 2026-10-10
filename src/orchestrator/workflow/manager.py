@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
-from orchestrator.opencode import OpenCodeClient, OpenCodeSessionManager
+from orchestrator.opencode import OpenCodeClient, OpenCodeError, OpenCodeSessionManager
 from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow.phases import (
@@ -63,15 +63,18 @@ class WorkflowManager:
                     self.state.set_workflow(workflow)
                     changed = True
                 elif result.error:
-                    logger.error(f"Workflow {workflow.repository}#{workflow.issue_number} failed: {result.error}")
-                    self._record_failure(workflow, result.error)
+                    logger.error(
+                        f"Workflow {workflow.repository}#{workflow.issue_number} failed "
+                        f"[{result.error_category or 'unknown'}]: {result.error}"
+                    )
+                    self._record_failure(workflow, result.error, result.error_category)
                     changed = True
                 elif result.pending:
                     logger.info(f"Workflow {workflow.repository}#{workflow.issue_number} awaiting OpenCode task completion")
                     changed = True
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Error processing workflow {workflow.repository}#{workflow.issue_number}: {e}")
-                self._record_failure(workflow, str(e))
+            except Exception as e:
+                logger.exception(f"Unexpected error processing workflow {workflow.repository}#{workflow.issue_number}")
+                self._record_failure(workflow, str(e), "internal")
                 changed = True
 
         if changed:
@@ -79,13 +82,13 @@ class WorkflowManager:
 
         return processed
 
-    def _record_failure(self, workflow: WorkflowState, error: str) -> None:
+    def _record_failure(self, workflow: WorkflowState, error: str, category: str = "") -> None:
         """Record a phase failure and apply the retry/backoff policy."""
         workflow.retry_count += 1
-        workflow.last_error = error
+        workflow.last_error = f"[{category or 'unknown'}] {error}"
         if workflow.retry_count >= self.config.retry.max_attempts:
             workflow.phase = WorkflowPhase.FAILED
-            workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: {error}"
+            workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: [{category or 'unknown'}] {error}"
             workflow.retry_at = None
         else:
             delay = self._retry_delay(workflow.retry_count)
@@ -187,7 +190,10 @@ class WorkflowManager:
             return WorkflowResult(success=False, error=f"Unknown phase: {workflow.phase}")
         except ProviderError as e:
             logger.error(f"Provider error in workflow {workflow.repository}#{workflow.issue_number}: {e}")
-            return WorkflowResult(success=False, error=f"Provider error: {e}")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"Unexpected error in workflow {workflow.repository}#{workflow.issue_number}: {e}")
-            return WorkflowResult(success=False, error=str(e))
+            return WorkflowResult(success=False, error=f"Provider error: {e}", error_category=e.category or "provider")
+        except OpenCodeError as e:
+            logger.error(f"OpenCode error in workflow {workflow.repository}#{workflow.issue_number}: {e}")
+            return WorkflowResult(success=False, error=f"OpenCode error: {e}", error_category="opencode")
+        except Exception as e:
+            logger.exception(f"Unexpected error in workflow {workflow.repository}#{workflow.issue_number}")
+            return WorkflowResult(success=False, error=str(e), error_category="internal")
