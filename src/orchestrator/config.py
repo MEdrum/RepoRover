@@ -52,12 +52,22 @@ class StateConfig:
 
 
 @dataclass
+class RetryConfig:
+    """Retry/backoff configuration for workflow phases."""
+    max_attempts: int = 3
+    base_delay_seconds: int = 2
+    max_delay_seconds: int = 60
+    exponential_base: int = 2
+
+
+@dataclass
 class OrchestratorConfig:
     """Main orchestrator configuration."""
     git_provider: GitProviderConfig = field(default_factory=GitProviderConfig)
     opencode: OpenCodeConfig = field(default_factory=OpenCodeConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     state: StateConfig = field(default_factory=StateConfig)
+    retry: RetryConfig = field(default_factory=RetryConfig)
     log_level: str = "INFO"
     
     @classmethod
@@ -107,9 +117,28 @@ class OrchestratorConfig:
             max_history=state_data.get("max_history", 1000)
         )
         
+        # Retry config
+        retry_data = data.get("retry", {})
+        config.retry = RetryConfig(
+            max_attempts=retry_data.get("max_attempts", 3),
+            base_delay_seconds=retry_data.get("base_delay_seconds", 2),
+            max_delay_seconds=retry_data.get("max_delay_seconds", 60),
+            exponential_base=retry_data.get("exponential_base", 2)
+        )
+        
         config.log_level = data.get("log_level", "INFO")
         
+        config.validate()
         return config
+    
+    def validate(self) -> None:
+        """Validate the configuration and fail fast with actionable errors."""
+        if self.git_provider.provider not in ("github", "gitlab"):
+            raise ValueError(
+                f"Unsupported git provider: {self.git_provider.provider!r}. "
+                f"'both' is not implemented: configure one provider per instance "
+                f"(run a separate orchestrator per provider) or remove the value."
+            )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
@@ -144,6 +173,12 @@ class OrchestratorConfig:
             "state": {
                 "state_dir": self.state.state_dir,
                 "max_history": self.state.max_history
+            },
+            "retry": {
+                "max_attempts": self.retry.max_attempts,
+                "base_delay_seconds": self.retry.base_delay_seconds,
+                "max_delay_seconds": self.retry.max_delay_seconds,
+                "exponential_base": self.retry.exponential_base
             },
             "log_level": self.log_level
         }

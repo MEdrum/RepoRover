@@ -41,3 +41,17 @@ class TestIssueOrchestratorWiring:
             asyncio.run(orchestrator._discovery_loop())
         assert sleep_mock.await_count == 1
         assert sleep_mock.await_args == mock.call(123)
+
+
+class TestIssueOrchestratorShutdown:
+    def test_stop_closes_opencode_clients(self, tmp_path):
+        config = OrchestratorConfig.from_dict({
+            "git_provider": {"repositories": ["owner/repo"]},
+            "state": {"state_dir": str(tmp_path)},
+        })
+        orchestrator = IssueOrchestrator(config)
+        with mock.patch.object(orchestrator.opencode, "close", new_callable=mock.AsyncMock) as oc_close:
+            with mock.patch.object(orchestrator.workflow, "close", new_callable=mock.AsyncMock) as wf_close:
+                asyncio.run(orchestrator.stop())
+        assert oc_close.await_count == 1
+        assert wf_close.await_count == 1

@@ -46,6 +46,7 @@ class WorkflowState:
     stuck_reason: str = ""
     retry_count: int = 0
     last_error: str = ""
+    retry_at: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -148,6 +149,10 @@ class OrchestratorState:
             if wf.phase not in (WorkflowPhase.COMPLETED, WorkflowPhase.FAILED):
                 active.append(wf)
         return active
+    
+    def list_workflows(self) -> list[WorkflowState]:
+        """List all workflows."""
+        return list(self._workflows.values())
     
     def list_stuck_workflows(self) -> List[WorkflowState]:
         """List stuck workflows."""

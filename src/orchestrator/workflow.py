@@ -5,13 +5,13 @@ Manages the workflow state machine for issue processing.
 """
 
 import logging
-from typing import Optional, List
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
+from git_provider import GitProvider, NotFoundError, ProviderError
 from orchestrator.config import OrchestratorConfig
-from orchestrator.state import OrchestratorState, WorkflowState, WorkflowPhase
-from orchestrator.opencode import OpenCodeClient, OpenCodeTask
-from git_provider import GitProvider, ProviderError
+from orchestrator.opencode import OpenCodeClient, OpenCodeResult, OpenCodeTask
+from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 class WorkflowResult:
     """Result of workflow processing."""
     success: bool
-    next_phase: Optional[WorkflowPhase] = None
+    next_phase: WorkflowPhase | None = None
     error: str = ""
     metadata: dict = None
+    pending: bool = False
 
 
 class WorkflowManager:
@@ -32,12 +33,16 @@ class WorkflowManager:
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
-        self._provider: Optional[GitProvider] = None
+        self._provider: GitProvider | None = None
+    
+    async def close(self):
+        """Close owned HTTP clients."""
+        await self.opencode.close()
     
     async def _get_provider(self) -> GitProvider:
         """Get or create Git provider."""
         if self._provider is None:
-            from git_provider import create_provider, ProviderType
+            from git_provider import ProviderType, create_provider
             provider_type = ProviderType.GITHUB if self.config.git_provider.provider in ("github", "both") else ProviderType.GITLAB
             provider_config = {}
             
@@ -61,24 +66,134 @@ class WorkflowManager:
         """Process all active workflows."""
         active_workflows = self.state.list_active_workflows()
         processed = 0
+        changed = False
+        now = datetime.now(UTC).isoformat()
         
         for workflow in active_workflows:
+            if workflow.retry_at and workflow.retry_at > now:
+                continue
             try:
                 result = await self._process_workflow(workflow)
                 if result.success:
                     processed += 1
+                    workflow.retry_count = 0
+                    workflow.last_error = ""
+                    workflow.retry_at = ""
+                    self.state.set_workflow(workflow)
+                    changed = True
                 elif result.error:
                     logger.error(f"Workflow {workflow.repository}#{workflow.issue_number} failed: {result.error}")
+                    self._record_failure(workflow, result.error)
+                    changed = True
+                elif result.pending:
+                    logger.info(f"Workflow {workflow.repository}#{workflow.issue_number} awaiting OpenCode task completion")
+                    changed = True
             except Exception as e:
                 logger.error(f"Error processing workflow {workflow.repository}#{workflow.issue_number}: {e}")
-                workflow.phase = WorkflowPhase.FAILED
-                workflow.last_error = str(e)
-                self.state.set_workflow(workflow)
+                self._record_failure(workflow, str(e))
+                changed = True
         
-        if processed > 0:
+        if changed:
             await self.state.save()
         
         return processed
+    
+    def _record_failure(self, workflow: WorkflowState, error: str) -> None:
+        """Record a phase failure and apply the retry/backoff policy."""
+        workflow.retry_count += 1
+        workflow.last_error = error
+        if workflow.retry_count >= self.config.retry.max_attempts:
+            workflow.phase = WorkflowPhase.FAILED
+            workflow.last_error = f"Exceeded {self.config.retry.max_attempts} attempts: {error}"
+            workflow.retry_at = ""
+        else:
+            delay = self._retry_delay(workflow.retry_count)
+            workflow.retry_at = (datetime.now(UTC) + timedelta(seconds=delay)).isoformat()
+        self.state.set_workflow(workflow)
+    
+    def _retry_delay(self, retry_count: int) -> int:
+        """Exponential backoff delay for the next retry."""
+        cfg = self.config.retry
+        delay = cfg.base_delay_seconds * (cfg.exponential_base ** (retry_count - 1))
+        return min(delay, cfg.max_delay_seconds)
+    
+    async def recover(self) -> dict:
+        """Reconcile provider-side resources with persisted workflow state.
+
+        Runs once at startup before resuming. For each workflow it checks the
+        phase-appropriate issue label, the existence of the expected branch,
+        and for completed workflows the existence of an open PR/MR. Returns a
+        report of what was fixed or found missing; never raises.
+"""
+        report = {
+            "checked": 0,
+            "labels_fixed": 0,
+            "missing_branches": [],
+            "missing_pull_requests": [],
+            "errors": [],
+        }
+        try:
+            provider = await self._get_provider()
+        except Exception as e:  # noqa: BLE001 - recovery must not crash startup
+            report["errors"].append(f"Provider unavailable: {e}")
+            return report
+        
+        for workflow in self.state.list_workflows():
+            key = f"{workflow.repository}#{workflow.issue_number}"
+            report["checked"] += 1
+            try:
+                owner, repo = workflow.repository.split("/", 1)
+                
+                if workflow.branch and workflow.phase not in (WorkflowPhase.NEW, WorkflowPhase.FAILED):
+                    try:
+                        await provider.get_branch(owner, repo, workflow.branch)
+                    except NotFoundError:
+                        report["missing_branches"].append(key)
+                
+                if workflow.phase == WorkflowPhase.COMPLETED and workflow.branch:
+                    prs = await provider.list_pull_requests(owner, repo, state="open", head=workflow.branch)
+                    if not any(pr.head_branch == workflow.branch for pr in prs):
+                        report["missing_pull_requests"].append(key)
+                
+                expected = self._expected_label(workflow.phase)
+                if expected:
+                    issue = await provider.get_issue(owner, repo, workflow.issue_number)
+                    if expected not in issue.labels:
+                        await provider.add_label(owner, repo, workflow.issue_number, expected)
+                        report["labels_fixed"] += 1
+                    for label in self._managed_labels():
+                        if label != expected and label in issue.labels:
+                            await provider.remove_label(owner, repo, workflow.issue_number, label)
+                            report["labels_fixed"] += 1
+            except Exception as e:  # noqa: BLE001 - recovery must not crash startup
+                report["errors"].append(f"{key}: {e}")
+        
+        return report
+    
+    def _expected_label(self, phase: WorkflowPhase) -> str | None:
+        """The issue label a workflow phase should carry, if any."""
+        if phase == WorkflowPhase.AWAITING_REVIEW:
+            return self.config.git_provider.labels.get("awaiting_review", "awaiting review")
+        if phase in (
+            WorkflowPhase.NEW,
+            WorkflowPhase.PLANNING,
+            WorkflowPhase.VERIFICATION_DESIGN,
+            WorkflowPhase.WRITE_TESTS,
+            WorkflowPhase.IMPLEMENTING,
+            WorkflowPhase.VERIFY,
+        ):
+            return self.config.git_provider.labels.get("in_progress", "doing")
+        return None
+    
+    def _managed_labels(self) -> list[str]:
+        """Labels the orchestrator manages on issues."""
+        labels = self.config.git_provider.labels
+        return [
+            labels.get("eligible", "agent"),
+            labels.get("in_progress", "doing"),
+            labels.get("stuck", "stuck"),
+            labels.get("awaiting_review", "awaiting review"),
+        ]
     
     async def _process_workflow(self, workflow: WorkflowState) -> WorkflowResult:
         """Process a single workflow based on its current phase."""
@@ -110,6 +225,48 @@ class WorkflowManager:
             logger.error(f"Unexpected error in workflow {workflow.repository}#{workflow.issue_number}: {e}")
             return WorkflowResult(success=False, error=str(e))
     
+    async def _ensure_branch(self, provider: GitProvider, owner: str, repo: str, branch: str, base: str) -> None:
+        """Create a branch only if it does not already exist (idempotent."""
+        try:
+            await provider.get_branch(owner, repo, branch)
+        except NotFoundError:
+            await provider.create_branch(owner, repo, branch, base)
+        else:
+            logger.info(f"Branch {branch} already exists, reusing")
+
+    async def _ensure_pull_request(self, provider: GitProvider, owner: str, repo: str, title: str, body: str, head: str, base: str):
+        """Find or create a PR/MR for the head branch (idempotent."""
+        existing = await provider.list_pull_requests(owner, repo, state="open", head=head)
+        for pr in existing:
+            if pr.head_branch == head and pr.base_branch == base:
+                logger.info(f"PR/MR for {head} already exists, reusing")
+                return pr
+        return await provider.create_pull_request(
+            owner=owner,
+            repo=repo,
+            title=title,
+            body=body,
+            head=head,
+            base=base
+        )
+    
+    async def _run_task(self, workflow: WorkflowState, task: OpenCodeTask) -> OpenCodeResult:
+        """Run a task, or poll an in-flight one, persisting its run id.
+
+        If the workflow already has an opencode_run_id the task is polled via
+        get_task_status. A missing/unknown task (status None) clears the run id
+        and submits a fresh task so recovery can self-heal.
+"""
+        if workflow.opencode_run_id:
+            status = await self.opencode.get_task_status(workflow.opencode_run_id)
+            if status is not None:
+                return status
+            workflow.opencode_run_id = ""
+        result = await self.opencode.run_task(task)
+        if result.pending and not workflow.opencode_run_id:
+            workflow.opencode_run_id = result.run_id or task.run_id
+        return result
+
     async def _phase_new(self, workflow: WorkflowState) -> WorkflowResult:
         """Initialize new workflow."""
         provider = await self._get_provider()
@@ -130,9 +287,9 @@ class WorkflowManager:
             # Get issue details
             issue = await provider.get_issue(owner, repo, workflow.issue_number)
             
-            # Create feature branch
+            # Create feature branch (idempotently; reuse an existing branch on retry)
             branch_name = f"agent/{workflow.issue_number}-{self._slugify(issue.title)}"
-            await provider.create_branch(owner, repo, branch_name, workflow.base_branch)
+            await self._ensure_branch(provider, owner, repo, branch_name, workflow.base_branch)
             
             workflow.branch = branch_name
             workflow.phase = WorkflowPhase.PLANNING
@@ -171,8 +328,11 @@ class WorkflowManager:
             )
             
             # Invoke OpenCode
-            result = await self.opencode.run_task(task)
-            
+            result = await self._run_task(workflow, task)
+            if result.pending:
+                self.state.set_workflow(workflow)
+                return WorkflowResult(success=False, pending=True)
+            workflow.opencode_run_id = ''
             if result.success:
                 workflow.plan = result.output
                 workflow.phase = WorkflowPhase.VERIFICATION_DESIGN
@@ -211,8 +371,11 @@ class WorkflowManager:
                 instructions=self._build_verification_design_prompt(issue, workflow)
             )
             
-            result = await self.opencode.run_task(task)
-            
+            result = await self._run_task(workflow, task)
+            if result.pending:
+                self.state.set_workflow(workflow)
+                return WorkflowResult(success=False, pending=True)
+            workflow.opencode_run_id = ''
             if result.success:
                 workflow.verification_plan = result.output
                 
@@ -257,8 +420,11 @@ class WorkflowManager:
                 instructions=self._build_write_tests_prompt(issue, workflow)
             )
             
-            result = await self.opencode.run_task(task)
-            
+            result = await self._run_task(workflow, task)
+            if result.pending:
+                self.state.set_workflow(workflow)
+                return WorkflowResult(success=False, pending=True)
+            workflow.opencode_run_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.IMPLEMENTING
                 self.state.set_workflow(workflow)
@@ -289,8 +455,11 @@ class WorkflowManager:
                 instructions=self._build_implementation_prompt(issue, workflow)
             )
             
-            result = await self.opencode.run_task(task)
-            
+            result = await self._run_task(workflow, task)
+            if result.pending:
+                self.state.set_workflow(workflow)
+                return WorkflowResult(success=False, pending=True)
+            workflow.opencode_run_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.VERIFY
                 self.state.set_workflow(workflow)
@@ -321,8 +490,11 @@ class WorkflowManager:
                 instructions=self._build_verification_prompt(issue, workflow)
             )
             
-            result = await self.opencode.run_task(task)
-            
+            result = await self._run_task(workflow, task)
+            if result.pending:
+                self.state.set_workflow(workflow)
+                return WorkflowResult(success=False, pending=True)
+            workflow.opencode_run_id = ''
             if result.success:
                 workflow.phase = WorkflowPhase.AWAITING_REVIEW
                 self.state.set_workflow(workflow)
@@ -357,7 +529,9 @@ class WorkflowManager:
             pr_title = f"Fix: {issue.title}"
             pr_body = f"Closes #{workflow.issue_number}\n\n## Summary\n\n{workflow.plan}\n\n## Verification\n\n{workflow.verification_plan}"
             
-            pr = await provider.create_pull_request(
+            # Create PR/MR (idempotently; reuse an existing one for the head branch)
+            pr = await self._ensure_pull_request(
+                provider=provider,
                 owner=owner,
                 repo=repo,
                 title=pr_title,

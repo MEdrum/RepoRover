@@ -17,18 +17,18 @@ impact.
   reads `self.config.polling_interval`, but the attribute lives at
   `self.config.git_provider.polling_interval`. The discovery loop raises
   `AttributeError` after its first poll and never sleeps/repeats normally.
-- [ ] **Implement or reject `provider: both` (P1).** Both provider-selection
+- [x] **Implement or reject `provider: both` (P1).** Both provider-selection
   paths choose GitHub whenever the value is `"both"`; GitLab is never
   discovered or processed in that mode. Either run separate provider adapters
   and route repositories explicitly, or validate the configuration and reject
   the unsupported value.
-- [ ] **Make workflow side effects idempotent (P1).** `_phase_new` persists the
+- [x] **Make workflow side effects idempotent (P1).** `_phase_new` persists the
   branch and phase before its initial comment completes, and
   `_phase_awaiting_review` creates the PR/MR before labels and the final
   comment. A crash or transient API failure can leave a branch/PR behind while
   the workflow retries the create operation and fails with a conflict or
   duplicate resource.
-- [ ] **Persist and bound failures/retries (P1).** `retry_count`, `last_error`,
+- [x] **Persist and bound failures/retries (P1).** `retry_count`, `last_error`,
   and the configured retry settings are not used to control phase retries.
   Most phase failures leave the workflow in the same phase and the loop retries
   every five seconds. Some error paths set state but `process_queue()` only
@@ -39,20 +39,20 @@ impact.
   creation. Repositories whose default branch is `master`, `develop`, or
   another name will fail or create the branch from the wrong base. Fetch the
   repository metadata before creating the workflow/branch.
-- [ ] **Complete restart recovery (P1).** The README describes label/branch
+- [x] **Complete restart recovery (P1).** The README describes label/branch
   reconciliation, but startup only loads JSON state. There is no recovery pass
   that checks in-flight OpenCode runs, existing branches, existing PRs/MRs, or
   the provider labels before resuming.
-- [ ] **Close HTTP clients during shutdown (P2).** `IssueOrchestrator.stop()`
+- [x] **Close HTTP clients during shutdown (P2).** `IssueOrchestrator.stop()`
   does not close its OpenCode client, and `WorkflowManager` owns a second
   OpenCode client that is also never closed. Add lifecycle ownership and close
   both clients.
-- [ ] **Handle provider/API response contracts explicitly (P2).**
+- [x] **Handle provider/API response contracts explicitly (P2).**
   `OpenCodeClient.run_task()` accepts only HTTP 200, although task creation
   commonly returns 201 or 202, and it defaults missing `success` to `True`.
   Validate the response schema and explicitly support the intended synchronous
   or asynchronous contract.
-- [ ] **Do not treat a missing OpenCode task as a completed failure forever
+- [x] **Do not treat a missing OpenCode task as a completed failure forever
   (P2).** `get_task_status()` returns `None` for 404 and all exceptions, but
   `opencode_run_id` is never stored or polled by the workflow. Long-running or
   asynchronous tasks therefore cannot be recovered or observed.

@@ -78,9 +78,12 @@ eligible issue
     -> COMPLETED (PR/MR created)
 ```
 
-`STUCK` and `FAILED` are also represented in the state model. The current
-implementation does not yet provide complete restart reconciliation, bounded
-retry handling, CI polling, or merge tracking.
+`STUCK` and `FAILED` are also represented in the state model. On startup the
+orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
+against the persisted state. OpenCode tasks that report an in-flight status are
+recorded by their run id and polled on subsequent passes instead of being
+re-submitted or marked failed. The current implementation does not yet provide
+CI polling or merge tracking.
 
 ## Architecture
 
@@ -103,7 +106,7 @@ Copy [`config.yaml.example`](config.yaml.example) to `config.yaml` and provide
 credentials out of source control. The supported top-level shape is:
 
 ```yaml
-provider: github # github or gitlab; "both" is not fully implemented
+provider: github # github or gitlab; "both" is rejected at startup
 
 github:
   token: ""
@@ -125,6 +128,12 @@ repositories:
 polling:
   interval_seconds: 60
   max_issues_per_poll: 50
+
+retry:
+  max_attempts: 3
+  base_delay_seconds: 2
+  max_delay_seconds:  ​60
+  exponential_base:​ 2
 
 opencode:
   api_url: http://opencode:8080
@@ -175,8 +184,9 @@ The intended state files are:
 - `/data/state/history.jsonl`
 
 The state model records the repository, issue, phase, branch, plans, timestamps,
-errors, and metadata. State recovery and partial external-operation recovery
-still need to be completed before unattended operation is safe.
+errors, and metadata. On startup the orchestrator reconciles labels, branches,
+and open PRs/MRs against the provider before resuming, and logs any missing
+resources it finds.
 
 ## Testing
 
