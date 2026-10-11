@@ -6,6 +6,7 @@ from unittest import mock
 
 from git_provider import (
     Branch,
+    Comment,
     Issue,
     NotFoundError,
     ProviderError,
@@ -18,6 +19,7 @@ from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 from orchestrator.workflow import WorkflowManager
 from orchestrator.workflow.phases import (
     PHASE_SPECS,
+    complete_phase_from_report,
     execute_task_phase,
     phase_awaiting_review,
     phase_new,
@@ -45,6 +47,7 @@ class FakeProvider:
         self.branches = []
         self.created_pull_requests = []
         self.comments = []
+        self.issue_comments = []
 
     async def authenticate(self):
         return True
@@ -85,7 +88,12 @@ class FakeProvider:
 
     async def create_comment(self, owner, repo, number, body):
         self.comments.append(body)
-        return mock.Mock()
+        return Comment(
+            id=f"c{len(self.comments)}", body=body, author="tester", created_at="", updated_at="", html_url=""
+        )
+
+    async def get_issue_comments(self, owner, repo, number):
+        return self.issue_comments
 
     async def list_pull_requests(self, owner, repo, state="open", head=None, base=None):
         result = []
@@ -232,26 +240,33 @@ class TestBoundedRetries:
 
     def test_phase_success_resets_retry_state(self, tmp_path):
         manager = _manager(tmp_path)
+        provider = FakeProvider()
         workflow = WorkflowState(
             issue_number=1,
             repository="owner/repo",
             project="repo",
-            phase=WorkflowPhase.STUCK,
+            phase=WorkflowPhase.AWAITING_REVIEW,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            plan="A plan",
+            verification_plan="A verification plan",
             retry_count=2,
             last_error="boom",
             retry_at=None,
         )
         manager.state.set_workflow(workflow)
-        processed = asyncio.run(manager.process_queue())
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            processed = asyncio.run(manager.process_queue())
         assert processed == 1
         wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.phase == WorkflowPhase.COMPLETED
         assert wf.retry_count == 0
         assert wf.last_error == ""
         assert wf.retry_at is None
 
 
 class TestOpenCodeSessionPhases:
-    def test_pending_result_keeps_workflow_in_phase_without_failure(self, tmp_path):
+    def test_submit_submits_prompt_and_awaits(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
         workflow = WorkflowState(
@@ -266,7 +281,7 @@ class TestOpenCodeSessionPhases:
         with (
             mock.patch.object(
                 manager.session_manager,
-                "run_or_poll",
+                "submit_prompt",
                 new_callable=mock.AsyncMock,
                 return_value=OpenCodeResult(success=True, pending=True, run_id="ses_1"),
             ),
@@ -276,9 +291,10 @@ class TestOpenCodeSessionPhases:
         assert processed == 0
         wf = manager.state.get_workflow("owner/repo", 1)
         assert wf.phase == WorkflowPhase.PLANNING
+        assert wf.awaiting_agent is True
         assert wf.retry_count == 0
 
-    def test_success_result_advances_phase_with_output(self, tmp_path):
+    def test_report_done_advances_phase_with_output(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
         workflow = WorkflowState(
@@ -288,25 +304,41 @@ class TestOpenCodeSessionPhases:
             phase=WorkflowPhase.PLANNING,
             branch="agent/1-fix-bug",
             base_branch="develop",
+            awaiting_agent=True,
             opencode_session_id="ses_1",
         )
         manager.state.set_workflow(workflow)
-        with (
-            mock.patch.object(
-                manager.session_manager,
-                "run_or_poll",
-                new_callable=mock.AsyncMock,
-                return_value=OpenCodeResult(success=True, output="A plan", run_id="ses_1"),
-            ),
-            mock.patch("git_provider.create_provider", return_value=provider),
-        ):
-            result = asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(complete_phase_from_report(manager, workflow, "A plan"))
         assert result.success
         assert workflow.plan == "A plan"
         assert workflow.phase == WorkflowPhase.VERIFICATION_DESIGN
-        assert workflow.opencode_session_id == "ses_1"  # session id persists across phases
+        assert workflow.awaiting_agent is False
+        assert workflow.opencode_session_id == "ses_1"
 
-    def test_failed_result_returns_failure_without_advancing(self, tmp_path):
+    def test_report_done_verification_token_selects_next_phase(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FakeProvider()
+        for issue, token in ((1, "AUTOMATED_TESTS: yes"), (2, "AUTOMATED_TESTS: no")):
+            workflow = WorkflowState(
+                issue_number=issue,
+                repository="owner/repo",
+                project="repo",
+                phase=WorkflowPhase.VERIFICATION_DESIGN,
+                branch="agent/1-fix-bug",
+                base_branch="develop",
+                awaiting_agent=True,
+                opencode_session_id="ses_1",
+            )
+            with mock.patch("git_provider.create_provider", return_value=provider):
+                outcome = asyncio.run(complete_phase_from_report(manager, workflow, f"A plan\n{token}"))
+            assert outcome.success
+            if token.endswith("yes"):
+                assert workflow.phase == WorkflowPhase.WRITE_TESTS
+            else:
+                assert workflow.phase == WorkflowPhase.IMPLEMENTING
+
+    def test_submit_failure_does_not_advance(self, tmp_path):
         manager = _manager(tmp_path)
         provider = FakeProvider()
         workflow = WorkflowState(
@@ -322,7 +354,7 @@ class TestOpenCodeSessionPhases:
         with (
             mock.patch.object(
                 manager.session_manager,
-                "run_or_poll",
+                "submit_prompt",
                 new_callable=mock.AsyncMock,
                 return_value=OpenCodeResult(success=False, error="boom", run_id="ses_1"),
             ),
@@ -332,7 +364,73 @@ class TestOpenCodeSessionPhases:
         assert not result.success
         assert "failed" in result.error
         assert workflow.phase == WorkflowPhase.PLANNING
-        assert workflow.opencode_session_id == "ses_1"
+        assert workflow.awaiting_agent is False
+
+
+class TestStuckLifecycle:
+    def test_report_stuck_marks_workflow_and_posts_comment(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FakeProvider()
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.IMPLEMENTING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            awaiting_agent=True,
+            opencode_session_id="ses_1",
+        )
+        manager.state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            result = asyncio.run(manager.report_stuck("owner/repo", 1, "Need a design decision"))
+        assert result.success
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.phase == WorkflowPhase.STUCK
+        assert wf.stuck_phase == "implementing"
+        assert wf.awaiting_agent is False
+        assert provider.comments
+        assert "## Agent is stuck" in provider.comments[-1]
+
+    def test_stuck_workflow_resumes_on_human_reply(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FakeProvider()
+        stuck_workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.IMPLEMENTING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            awaiting_agent=True,
+            opencode_session_id="ses_1",
+        )
+        manager.state.set_workflow(stuck_workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            asyncio.run(manager.report_stuck("owner/repo", 1, "blocked"))
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.phase == WorkflowPhase.STUCK
+        stuck_id = wf.metadata["stuck_comment_id"]
+        # A human comment appears after the stuck comment.
+        provider.issue_comments = [
+            Comment(
+                id=stuck_id,
+                body="## Agent is stuck\n\nblocked",
+                author="tester",
+                created_at="",
+                updated_at="",
+                html_url="",
+            ),
+            Comment(id="c2", body="User's reply", author="user", created_at="", updated_at="", html_url=""),
+        ]
+        with mock.patch.object(manager.session_manager, "submit_prompt", new_callable=mock.AsyncMock) as submit_mock:
+            resumed = asyncio.run(manager._check_stuck_reply(wf))
+        assert resumed is True
+        wf = manager.state.get_workflow("owner/repo", 1)
+        assert wf.phase == WorkflowPhase.IMPLEMENTING
+        assert wf.awaiting_agent is True
+        assert wf.stuck_response == "User's reply"
+        submit_mock.assert_awaited_once()
 
 
 class TestShutdown:
@@ -415,11 +513,23 @@ class TestErrorCategorization:
             phase=WorkflowPhase.PLANNING,
             branch="agent/1-fix-bug",
         )
-        good = WorkflowState(issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK)
+        # An awaiting workflow needs no provider call, so it is untouched by the failure.
+        good = WorkflowState(
+            issue_number=2,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/2-fix-bug",
+            awaiting_agent=True,
+            opencode_session_id="ses_1",
+            opencode_prompt_sent_at=datetime.now(UTC),
+        )
         manager.state.set_workflow(bad)
         manager.state.set_workflow(good)
         with mock.patch("git_provider.create_provider", return_value=bad_provider):
             processed = asyncio.run(manager.process_queue())
-        assert processed == 1
+        assert processed == 0
         bad_wf = manager.state.get_workflow("owner/repo", 1)
         assert "[internal]" in bad_wf.last_error
+        good_wf = manager.state.get_workflow("owner/repo", 2)
+        assert good_wf.awaiting_agent is True

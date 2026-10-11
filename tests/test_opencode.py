@@ -153,85 +153,40 @@ class TestOpenCodeSessionManager:
         assert session == "ses_existing"
         client.create_session.assert_not_awaited()
 
-    def test_run_or_poll_submits_then_polls_to_success(self, tmp_path):
+    def test_submit_prompt_submits_and_records_sent_at(self, tmp_path):
         state = OrchestratorState(str(tmp_path))
         client = mock.Mock(spec=OpenCodeClient)
         client.create_session = mock.AsyncMock(return_value="ses_1")
-        client.session_status = mock.AsyncMock(side_effect=["idle", "busy", "idle", "idle"])
-        client.get_messages = mock.AsyncMock(
-            side_effect=[
-                [{"info": {"role": "user"}, "parts": []}],
-                [{"info": {"role": "user"}, "parts": []}],
-                [
-                    {"info": {"role": "user"}, "parts": []},
-                    {"info": {"role": "assistant", "id": "m_new"}, "parts": [{"type": "text", "text": "result"}]},
-                ],
-            ]
-        )
         client.submit_prompt_async = mock.AsyncMock()
         manager = OpenCodeSessionManager(client, state)
         workflow = _workflow()
-        state.set_workflow(workflow)
-
-        r1 = asyncio.run(manager.run_or_poll(workflow, "prompt"))
-        assert r1.pending
-        client.submit_prompt_async.assert_awaited_once_with("ses_1", "prompt")
-
-        r2 = asyncio.run(manager.run_or_poll(workflow, "prompt"))
-        assert r2.pending
-        client.submit_prompt_async.assert_awaited_once()  # no resubmit while busy
-
-        # r3 fetches the user-only list (idle but no response yet) -> keep waiting.
-        r3 = asyncio.run(manager.run_or_poll(workflow, "prompt"))
-        assert r3.pending
-        client.submit_prompt_async.assert_awaited_once()  # no resubmit while inflight
-
-        # The assistant response finally arrives.
-        r4 = asyncio.run(manager.run_or_poll(workflow, "prompt"))
-        assert r4.success
-        assert r4.output == "result"
-
-    def test_run_or_poll_resumed_never_submits(self, tmp_path):
-        state = OrchestratorState(str(tmp_path))
-        client = mock.Mock(spec=OpenCodeClient)
-        client.session_status = mock.AsyncMock(return_value="idle")
-        client.get_messages = mock.AsyncMock(
-            return_value=[
-                {"info": {"role": "assistant", "id": "m_old"}, "parts": [{"type": "text", "text": "old"}]},
-            ]
-        )
-        client.submit_prompt_async = mock.AsyncMock()
-        manager = OpenCodeSessionManager(client, state)
-        workflow = _workflow(opencode_session_id="ses_restored")
-        state.set_workflow(workflow)
-
-        result = asyncio.run(manager.run_or_poll(workflow, "prompt"))
+        result = asyncio.run(manager.submit_prompt(workflow, "do it"))
         assert result.success
-        assert result.output == "old"
-        client.submit_prompt_async.assert_not_awaited()
+        assert result.pending
+        client.submit_prompt_async.assert_awaited_once_with("ses_1", "do it")
+        assert workflow.opencode_prompt_sent_at is not None
 
-    def test_session_is_shared_and_serial_within_repo(self, tmp_path):
+    def test_submit_prompt_failure_returns_error(self, tmp_path):
         state = OrchestratorState(str(tmp_path))
         client = mock.Mock(spec=OpenCodeClient)
         client.create_session = mock.AsyncMock(return_value="ses_1")
-        client.session_status = mock.AsyncMock(return_value="idle")
-        client.get_messages = mock.AsyncMock(
-            return_value=[
-                {"info": {"role": "user"}, "parts": []},
-            ]
-        )
-        client.submit_prompt_async = mock.AsyncMock()
+        client.submit_prompt_async = mock.AsyncMock(side_effect=OpenCodeError("boom"))
         manager = OpenCodeSessionManager(client, state)
-        a = _workflow(number=1)
-        b = _workflow(number=2)
-        state.set_workflow(a)
-        state.set_workflow(b)
+        workflow = _workflow()
+        result = asyncio.run(manager.submit_prompt(workflow, "do it"))
+        assert not result.success
+        assert "boom" in result.error
 
-        ra = asyncio.run(manager.run_or_poll(a, "prompt-a"))
-        assert ra.pending
-        assert a.opencode_session_id == "ses_1"
-        # While a's prompt is in flight, b must not submit on the shared session.
-        rb = asyncio.run(manager.run_or_poll(b, "prompt-b"))
-        assert rb.pending
-        assert b.opencode_session_id == "ses_1"
-        client.submit_prompt_async.assert_awaited_once()
+    def test_session_status_passthrough(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        client = mock.Mock(spec=OpenCodeClient)
+        client.session_status = mock.AsyncMock(return_value="idle")
+        manager = OpenCodeSessionManager(client, state)
+        assert asyncio.run(manager.session_status("ses_1")) == "idle"
+
+    def test_session_status_failure_returns_unknown(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        client = mock.Mock(spec=OpenCodeClient)
+        client.session_status = mock.AsyncMock(side_effect=OpenCodeError("boom"))
+        manager = OpenCodeSessionManager(client, state)
+        assert asyncio.run(manager.session_status("ses_1")) == "unknown"

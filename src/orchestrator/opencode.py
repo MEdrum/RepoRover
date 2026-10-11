@@ -17,6 +17,7 @@ import base64
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -171,22 +172,16 @@ class OpenCodeClient:
 class OpenCodeSessionManager:
     """Manages one OpenCode session per repository.
 
-    Sessions are reused across issues and phases within a repository. A prompt
-    is submitted only when the session is idle and no newer assistant message
-    is available. After a restart, a workflow that already has a session id is
-    resumed by polling only (never auto-resubmitted).
+    The agent works inside the session and signals step completion directly to
+    RepoRover via the MCP tools (report_done / report_stuck); RepoRover only
+    submits prompts (or injected continuation messages) to the session and
+    reads its status for the inactivity watchdog.
     """
 
     def __init__(self, client: OpenCodeClient, state):
         self.client = client
         self.state = state
         self._repo_session: dict[str, str] = {}
-        self._consumed: dict[str, str | None] = {}
-        self._inflight: set[str] = set()
-        self._attempted: set[str] = set()
-
-    def _workflow_key(self, workflow: WorkflowState) -> str:
-        return self.state.get_workflow_key(workflow.repository, workflow.issue_number)
 
     async def ensure_session(self, workflow: WorkflowState) -> str:
         """Resolve the session for a repository, creating one if needed."""
@@ -204,49 +199,20 @@ class OpenCodeSessionManager:
         workflow.opencode_session_id = session_id
         return session_id
 
-    async def run_or_poll(self, workflow: WorkflowState, prompt: str) -> OpenCodeResult:
-        """Submit or poll a prompt against the repository's session."""
-        key = self._workflow_key(workflow)
-        resumed = key not in self._attempted and bool(workflow.opencode_session_id)
+    async def submit_prompt(self, workflow: WorkflowState, text: str) -> OpenCodeResult:
+        """Submit a prompt (phase step or continuation) to the repository's session."""
         session_id = await self.ensure_session(workflow)
-        self._attempted.add(key)
-
         try:
-            status = await self.client.session_status(session_id)
-        except Exception as e:
-            return OpenCodeResult(success=False, error=f"OpenCode status check failed: {e}", run_id=session_id)
-
-        if status in ("busy", "retry"):
-            return OpenCodeResult(success=True, pending=True, run_id=session_id)
-
-        # Idle: look for a new assistant message beyond the consumed boundary.
-        try:
-            messages = await self.client.get_messages(session_id)
-        except Exception as e:
-            return OpenCodeResult(success=False, error=f"OpenCode message check failed: {e}", run_id=session_id)
-
-        latest = OpenCodeClient.latest_assistant_message(messages)
-        latest_id = latest.get("info", {}).get("id") if latest else None
-        if latest_id and latest_id != self._consumed.get(session_id):
-            self._consumed[session_id] = latest_id
-            self._inflight.discard(session_id)
-            return OpenCodeResult(
-                success=True,
-                output=OpenCodeClient.assistant_text(latest),
-                run_id=session_id,
-            )
-
-        # No new message. Never auto-resubmit a resumed session after restart.
-        if resumed and session_id not in self._inflight:
-            return OpenCodeResult(success=True, pending=True, run_id=session_id)
-
-        # Avoid resubmitting while we are already waiting on a response.
-        if session_id in self._inflight:
-            return OpenCodeResult(success=True, pending=True, run_id=session_id)
-
-        try:
-            await self.client.submit_prompt_async(session_id, prompt)
+            await self.client.submit_prompt_async(session_id, text)
         except Exception as e:
             return OpenCodeResult(success=False, error=f"OpenCode submit failed: {e}", run_id=session_id)
-        self._inflight.add(session_id)
-        return OpenCodeResult(success=True, pending=True, run_id=session_id)
+        workflow.opencode_prompt_sent_at = datetime.now(UTC)
+        return OpenCodeResult(success=True, run_id=session_id, pending=True)
+
+    async def session_status(self, session_id: str) -> str:
+        """Return the session status type (idle, busy, retry, unknown)."""
+        try:
+            return await self.client.session_status(session_id)
+        except Exception as e:
+            logger.warning(f"Failed to read session status {session_id}: {e}")
+            return "unknown"

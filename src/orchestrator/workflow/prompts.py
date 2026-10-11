@@ -1,8 +1,27 @@
 """
 Prompt builders for the OpenCode task phases.
+
+Every phase prompt ends with the agent-driven contract: the agent works inside
+the session, then signals completion by calling the RepoRover MCP tools
+`report_done(repository, issue_id, result)` or, if user input is needed,
+`report_stuck(repository, issue_id, block_description)`.
 """
 
 import re
+
+
+def _step_footer(workflow) -> str:
+    return f"""When you have finished this step, call the tool `report_done` with:
+- repository: {workflow.repository}
+- issue_id: {workflow.issue_number}
+- result: <the result/outcome of this step>
+
+If you need user input or a design decision to continue, call `report_stuck` with:
+- repository: {workflow.repository}
+- issue_id: {workflow.issue_number}
+- block_description: <what you need from the user>
+
+Do not proceed to the next step yourself; RepoRover advances the workflow when you report done."""
 
 
 def build_planning_prompt(issue, workflow) -> str:
@@ -46,11 +65,13 @@ Create a detailed implementation plan following this format:
 `{workflow.branch}`
 Base: `{workflow.base_branch}`
 
-Do not implement anything yet. Only create the plan."""
+Do not implement anything yet. Only create the plan.
+
+{_step_footer(workflow)}"""
 
 
 def build_verification_design_prompt(issue, workflow) -> str:
-    """Build the verification design prompt."""
+    """Build the verification design prompt (testability step)."""
     return f"""Based on the issue and your plan, design a verification strategy.
 
 ## Issue
@@ -75,7 +96,13 @@ verification plan with specific steps]
 ### Acceptance criteria
 [Specific criteria that must be met for the issue to be considered complete]
 
-Be specific and actionable. Do not create fake tests just to satisfy a test-first rule."""
+Be specific and actionable. Do not create fake tests just to satisfy a test-first rule.
+
+Your report_done `result` must end with exactly one of these lines:
+AUTOMATED_TESTS: yes
+AUTOMATED_TESTS: no
+
+{_step_footer(workflow)}"""
 
 
 def build_write_tests_prompt(issue, workflow) -> str:
@@ -99,7 +126,9 @@ Write tests that:
 3. Will fail before implementation and pass after
 4. Are meaningful (not fake tests)
 
-Focus on the automated test portion of the verification plan. Do not implement the feature yet."""
+Focus on the automated test portion of the verification plan. Do not implement the feature yet.
+
+{_step_footer(workflow)}"""
 
 
 def build_implementation_prompt(issue, workflow) -> str:
@@ -122,8 +151,11 @@ Implement the changes:
 2. Make tests pass
 3. Commit regularly with conventional commit messages
 4. Push to branch `{workflow.branch}`
+5. Run the tests and checks and make them pass before reporting done
 
-Do not modify the tests you wrote. Make the implementation satisfy them."""
+Do not modify the tests you wrote. Make the implementation satisfy them.
+
+{_step_footer(workflow)}"""
 
 
 def build_verification_prompt(issue, workflow) -> str:
@@ -148,7 +180,10 @@ Run verification:
 4. Perform manual/visual verification if required
 5. Report results
 
-If verification fails, explain what failed and why. The workflow will return to implementing phase."""
+If verification fails, fix the failures and re-run until they pass before
+reporting done. Only report stuck if you are genuinely blocked.
+
+{_step_footer(workflow)}"""
 
 
 def slugify(text: str) -> str:
@@ -159,7 +194,7 @@ def slugify(text: str) -> str:
     return text[:50]
 
 
-def has_automated_tests(verification_plan: str) -> bool:
-    """Check if a verification plan includes automated tests."""
-    plan_lower = verification_plan.lower()
-    return "automated test" in plan_lower and "no automated test" not in plan_lower
+def verification_decides_tests(result: str) -> str:
+    """Return \"yes\" or \"no\" for the testability decision in a report result."""
+    match = re.search(r"automated_tests:\s*(yes|no)", result, re.IGNORECASE)
+    return match.group(1).lower() if match else "no"

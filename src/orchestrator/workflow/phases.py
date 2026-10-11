@@ -21,8 +21,8 @@ from orchestrator.workflow.prompts import (
     build_verification_design_prompt,
     build_verification_prompt,
     build_write_tests_prompt,
-    has_automated_tests,
     slugify,
+    verification_decides_tests,
 )
 from orchestrator.workflow.tasks import run_or_poll
 
@@ -50,11 +50,10 @@ class PhaseSpec:
     output_field: str | None
     next_phase: WorkflowPhase | Callable
     comment_prefix: str | None = None
-    retry_phase: WorkflowPhase | None = None
 
 
-def _verification_next(output: str) -> WorkflowPhase:
-    return WorkflowPhase.WRITE_TESTS if has_automated_tests(output) else WorkflowPhase.IMPLEMENTING
+def _verification_next(result: str) -> WorkflowPhase:
+    return WorkflowPhase.WRITE_TESTS if verification_decides_tests(result) == "yes" else WorkflowPhase.IMPLEMENTING
 
 
 PHASE_SPECS: dict[WorkflowPhase, PhaseSpec] = {
@@ -90,13 +89,19 @@ PHASE_SPECS: dict[WorkflowPhase, PhaseSpec] = {
         output_field=None,
         next_phase=WorkflowPhase.AWAITING_REVIEW,
         comment_prefix="Verification complete",
-        retry_phase=WorkflowPhase.IMPLEMENTING,
     ),
 }
 
 
 async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) -> WorkflowResult:
-    """Run a single OpenCode task phase."""
+    """Submit the phase prompt if it has not been submitted yet.
+
+    Completion is driven by the agent's report_done/report_stuck signal, so
+    this always returns pending once the prompt is in flight.
+    """
+    if workflow.awaiting_agent:
+        return WorkflowResult(success=False, pending=True)
+
     provider = await manager._get_provider(workflow.repository)
     owner, repo = workflow.repository.split("/", 1)
     issue = await provider.get_issue(owner, repo, workflow.issue_number)
@@ -112,32 +117,65 @@ async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) 
         instructions=spec.prompt_builder(issue, workflow),
     )
     result = await run_or_poll(manager, workflow, task)
-    if result.pending:
-        manager.state.set_workflow(workflow)
-        return WorkflowResult(success=False, pending=True)
-
     if not result.success:
-        error = f"{spec.phase.value} failed: {result.error}"
-        if spec.retry_phase is not None:
-            workflow.phase = spec.retry_phase
-            manager.state.set_workflow(workflow)
-            return WorkflowResult(success=False, error=error, next_phase=spec.retry_phase)
-        return WorkflowResult(success=False, error=error)
+        return WorkflowResult(success=False, error=f"{spec.phase.value} submit failed: {result.error}")
 
+    workflow.awaiting_agent = True
+    manager.state.set_workflow(workflow)
+    return WorkflowResult(success=False, pending=True)
+
+
+async def complete_phase_from_report(manager, workflow: WorkflowState, result: str) -> WorkflowResult:
+    """Advance the state machine on the agent's report_done signal."""
+    spec = PHASE_SPECS.get(workflow.phase)
+    if spec is None:
+        return WorkflowResult(
+            success=False, error=f"report_done received for phase {workflow.phase.value}, which has no agent step"
+        )
+
+    workflow.awaiting_agent = False
+    workflow.opencode_prompt_sent_at = None
     if spec.output_field:
-        setattr(workflow, spec.output_field, result.output)
-    next_phase = spec.next_phase(result.output) if callable(spec.next_phase) else spec.next_phase
+        setattr(workflow, spec.output_field, result)
+    next_phase = spec.next_phase(result) if callable(spec.next_phase) else spec.next_phase
     workflow.phase = next_phase
     manager.state.set_workflow(workflow)
 
     if spec.comment_prefix:
-        await provider.create_comment(
-            owner,
-            repo,
-            workflow.issue_number,
-            f"## {spec.comment_prefix}\n\n{result.output}",
-        )
+        try:
+            provider = await manager._get_provider(workflow.repository)
+            owner, repo = workflow.repository.split("/", 1)
+            await provider.create_comment(owner, repo, workflow.issue_number, f"## {spec.comment_prefix}\n\n{result}")
+        except Exception as e:
+            logger.error(
+                f"Failed to post {spec.comment_prefix} comment for {workflow.repository}#{workflow.issue_number}: {e}"
+            )
     return WorkflowResult(success=True, next_phase=next_phase)
+
+
+async def mark_stuck(manager, workflow: WorkflowState, description: str) -> WorkflowResult:
+    """Mark a workflow stuck on the agent's report_stuck signal."""
+    workflow.stuck_phase = workflow.phase.value
+    workflow.awaiting_agent = False
+    workflow.opencode_prompt_sent_at = None
+    workflow.stuck_reason = description
+    workflow.phase = WorkflowPhase.STUCK
+    manager.state.set_workflow(workflow)
+
+    try:
+        provider = await manager._get_provider(workflow.repository)
+        owner, repo = workflow.repository.split("/", 1)
+        stuck_label = manager.config.git_provider.labels.get("stuck", "stuck")
+        await provider.add_label(owner, repo, workflow.issue_number, stuck_label)
+        comment = await provider.create_comment(
+            owner, repo, workflow.issue_number, f"## Agent is stuck\n\n{description}"
+        )
+        workflow.metadata["stuck_comment_id"] = comment.id
+        manager.state.set_workflow(workflow)
+    except Exception as e:
+        logger.error(f"Failed to post stuck state for {workflow.repository}#{workflow.issue_number}: {e}")
+
+    return WorkflowResult(success=True, next_phase=WorkflowPhase.STUCK)
 
 
 async def ensure_branch(provider: GitProvider, owner: str, repo: str, branch: str, base: str) -> None:
@@ -234,5 +272,5 @@ async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowRes
 
 
 async def phase_stuck(manager, workflow: WorkflowState) -> WorkflowResult:
-    """Stuck phase - wait for human response."""
-    return WorkflowResult(success=True, next_phase=WorkflowPhase.STUCK)
+    """Stuck phase - wait for a human response (handled by the poll loop)."""
+    return WorkflowResult(success=False, pending=True)
