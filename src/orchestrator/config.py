@@ -59,11 +59,22 @@ class RetryConfig:
 
 
 @dataclass
+class MCPConfig:
+    """Model Context Protocol server hosting for the agent's report tools."""
+
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8000
+    path: str = "/mcp"
+
+
+@dataclass
 class OrchestratorConfig:
     """Main orchestrator configuration."""
 
     git_provider: GitProviderConfig = field(default_factory=GitProviderConfig)
     opencode: OpenCodeConfig = field(default_factory=OpenCodeConfig)
+    mcp: MCPConfig = field(default_factory=MCPConfig)
     state: StateConfig = field(default_factory=StateConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     log_level: str = "INFO"
@@ -80,6 +91,7 @@ class OrchestratorConfig:
         config.opencode = _opencode_from_dict(data.get("opencode", {}))
         config.state = _state_from_dict(data.get("state", {}))
         config.retry = _retry_from_dict(data.get("retry", {}))
+        config.mcp = _mcp_from_dict(data.get("mcp", {}))
         config.log_level = data.get("log_level", config.log_level)
         config.validate()
         return config
@@ -170,4 +182,14 @@ def _retry_from_dict(data: dict) -> RetryConfig:
         base_delay_seconds=data.get("base_delay_seconds", defaults.base_delay_seconds),
         max_delay_seconds=data.get("max_delay_seconds", defaults.max_delay_seconds),
         exponential_base=data.get("exponential_base", defaults.exponential_base),
+    )
+
+
+def _mcp_from_dict(data: dict) -> MCPConfig:
+    defaults = MCPConfig()
+    return MCPConfig(
+        enabled=data.get("enabled", defaults.enabled),
+        host=data.get("host", defaults.host),
+        port=data.get("port", defaults.port),
+        path=data.get("path", defaults.path),
     )

@@ -80,11 +80,24 @@ eligible issue
 
 `STUCK` and `FAILED` are also represented in the state model. On startup the
 orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
-against the persisted state. OpenCode interactions are asynchronous: each
-repository gets a persistent session, prompts are submitted without waiting,
-and the workflow polls the session status/messages on subsequent passes instead
-of re-submitting or marking failed. The current implementation does not yet
-provide CI polling or merge tracking.
+against the persisted state.
+
+**Agent-driven steps.** The task phases (PLANNING, VERIFICATION_DESIGN,
+WRITE_TESTS, IMPLEMENTING, VERIFY) are executed by the OpenCode agent inside a
+per-repository session. RepoRover submits a step prompt, then the agent signals
+completion through the RepoRover MCP server:
+
+- `report_done(repository, issue_id, result)` — advances the state machine
+  (e.g. the VERIFICATION_DESIGN result declares `AUTOMATED_TESTS: yes|no` to
+  choose WRITE_TESTS vs IMPLEMENTING).
+- `report_stuck(repository, issue_id, block_description)` — marks the workflow
+  STUCK, adds the `stuck` label, and posts the description as an issue comment.
+  RepoRover waits for a human comment, then removes the label and resumes the
+  agent by injecting the reply into its session.
+
+A watchdog nudges the agent if a submitted step sits idle for ~20s without a
+signal. The current implementation does not yet provide CI polling or merge
+tracking.
 
 ## Architecture
 

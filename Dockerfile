@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/orchestrator/ ./orchestrator/
+
+EXPOSE 8000  # MCP streamable HTTP
 COPY src/git_provider/ ./git_provider/
 COPY config.yaml.example ./config.yaml.example
 

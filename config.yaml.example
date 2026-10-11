@@ -57,10 +57,19 @@ retry:
 opencode:
   api_url: "http://opencode:8080"
   timeout: 300  # seconds per request
-  max_concurrent: 1  # reserved; concurrency is not yet enabled
+  max_concurrent: 1  # backpressure/concurrency target for discovery
   # The server uses HTTP Basic auth with user "opencode". Provide the password
   # via the OPENCODE_SERVER_PASSWORD environment variable instead of this file.
   # password: ""
+
+# MCP server for the agent's report tools (report_done / report_stuck).
+# No auth: reachable over the docker network. Configure opencode to connect to
+# http://<repo-rover-container>:8000/mcp
+mcp:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  path: "/mcp"
 
 # State persistence
 state:

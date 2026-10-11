@@ -15,6 +15,7 @@ import yaml
 
 from orchestrator.config import OrchestratorConfig
 from orchestrator.discovery import IssueDiscovery
+from orchestrator.mcp_server import RepoRoverMCPServer
 from orchestrator.opencode import OpenCodeClient
 from orchestrator.providers import ProviderManager
 from orchestrator.state import OrchestratorState
@@ -58,6 +59,14 @@ class IssueOrchestrator:
         # Start workflow processing loop
         workflow_task = asyncio.create_task(self._workflow_loop())
         self._tasks.append(workflow_task)
+
+        # Start the MCP server for the agent's report tools
+        if self.config.mcp.enabled:
+            self.mcp_server = RepoRoverMCPServer(self.workflow)
+            mcp_task = asyncio.create_task(
+                self.mcp_server.run(self.config.mcp.host, self.config.mcp.port, self.config.mcp.path)
+            )
+            self._tasks.append(mcp_task)
 
         logger.info("Issue Orchestrator started")
 
