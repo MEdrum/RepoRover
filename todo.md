@@ -136,6 +136,32 @@ impact.
   values or environment interpolation in compose files.
 - [ ] Provider capability negotiation so unsupported operations are surfaced
   before a workflow starts.
+- [ ] Metrics & a RepoRover Dashboard. Collect token usage, cost, and work
+  duration per phase and per issue, and surface them (alongside queue depth,
+  phase duration, retries, provider rate limits, OpenCode health) in a small
+  dashboard UI.
+- [ ] Dashboard "Create new project" flow:
+  - A button opens a text area to paste a project description (e.g. a markdown
+    file explaining what to build).
+  - An LLM analyzes the description and returns structured output containing at
+    least the repository name (or null) and a short GitHub description
+    (extensible with more fields later).
+  - RepoRover creates the repository (or asks for the name if null), then gives
+    Opencode the task to pull the repo, analyze the markdown, and scaffold:
+    - `README.md` following the user's README template (see preferences);
+    - a license (`MIT` unless the input specifies otherwise);
+    - contributing information based on the user's contributing preferences;
+    - a pipeline (or stub) for code-quality checks, linting, tests, etc.
+- [ ] Generate README.md from the user's template preferences:
+  - A table of contents at the top, then a project description, a getting
+    started guide, and a high-level overview; then, in a sensible order:
+    design decisions, project structure, detailed implementation information,
+    API definition(s), how to test, and any additional project information.
+  - A section for non-trivial "issues encountered and how they were solved"
+    (trial-and-error) may be included.
+- [ ] Contributing guidelines that emphasize conventional branching and commit
+  messages, with a commit footer referencing the issues related to or closed by
+  the commit.
 
 ## Validation performed
 
