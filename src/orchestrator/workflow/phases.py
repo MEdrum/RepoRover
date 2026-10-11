@@ -121,6 +121,7 @@ async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) 
         return WorkflowResult(success=False, error=f"{spec.phase.value} submit failed: {result.error}")
 
     workflow.awaiting_agent = True
+    workflow.metadata["opencode_nudged"] = False
     manager.state.set_workflow(workflow)
     return WorkflowResult(success=False, pending=True)
 

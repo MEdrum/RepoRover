@@ -95,9 +95,10 @@ completion through the RepoRover MCP server:
   RepoRover waits for a human comment, then removes the label and resumes the
   agent by injecting the reply into its session.
 
-A watchdog nudges the agent if a submitted step sits idle for ~20s without a
-signal. The current implementation does not yet provide CI polling or merge
-tracking.
+A watchdog nudges the agent once if a submitted step sits idle for ~20s without
+a signal; it never nags repeatedly, so a broken/missing MCP server cannot burn
+LLM budget on repeated tool requests. The current implementation does not yet
+provide CI polling or merge tracking.
 
 ## Architecture
 

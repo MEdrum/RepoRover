@@ -1,7 +1,7 @@
 """Tests for workflow phase processing."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 from git_provider import (
@@ -533,3 +533,62 @@ class TestErrorCategorization:
         assert "[internal]" in bad_wf.last_error
         good_wf = manager.state.get_workflow("owner/repo", 2)
         assert good_wf.awaiting_agent is True
+
+
+class TestWatchdog:
+    def test_nudges_only_once_per_prompt(self, tmp_path):
+        manager = _manager(tmp_path)
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+            awaiting_agent=True,
+            opencode_session_id="ses_1",
+            opencode_prompt_sent_at=datetime.now(UTC) - timedelta(seconds=60),
+        )
+        manager.state.set_workflow(workflow)
+        with (
+            mock.patch.object(
+                manager.session_manager,
+                "submit_prompt",
+                new_callable=mock.AsyncMock,
+                return_value=OpenCodeResult(success=True, pending=True, run_id="ses_1"),
+            ) as submit_mock,
+            mock.patch.object(
+                manager.session_manager, "session_status", new_callable=mock.AsyncMock, return_value="idle"
+            ),
+        ):
+            asyncio.run(manager.process_queue())
+            wf = manager.state.get_workflow("owner/repo", 1)
+            assert wf.metadata.get("opencode_nudged") is True
+            asyncio.run(manager.process_queue())
+        assert submit_mock.await_count == 1
+
+    def test_fresh_phase_prompt_resets_nudge_flag(self, tmp_path):
+        manager = _manager(tmp_path)
+        provider = FakeProvider()
+        workflow = WorkflowState(
+            issue_number=1,
+            repository="owner/repo",
+            project="repo",
+            phase=WorkflowPhase.PLANNING,
+            branch="agent/1-fix-bug",
+            base_branch="develop",
+            opencode_session_id="ses_1",
+            metadata={"opencode_nudged": True},
+        )
+        manager.state.set_workflow(workflow)
+        with (
+            mock.patch.object(
+                manager.session_manager,
+                "submit_prompt",
+                new_callable=mock.AsyncMock,
+                return_value=OpenCodeResult(success=True, pending=True, run_id="ses_1"),
+            ),
+            mock.patch("git_provider.create_provider", return_value=provider),
+        ):
+            asyncio.run(execute_task_phase(manager, workflow, PHASE_SPECS[WorkflowPhase.PLANNING]))
+        assert workflow.awaiting_agent is True
+        assert workflow.metadata["opencode_nudged"] is False

@@ -27,10 +27,8 @@ from orchestrator.workflow.phases import (
 
 logger = logging.getLogger(__name__)
 
-# Seconds a submitted prompt may sit idle before the agent is nudged.
+# Seconds a submitted prompt may sit idle before the agent is nudged once.
 WATCHDOG_IDLE_SECONDS = 20
-# Minimum seconds between nudges to the same workflow.
-WATCHDOG_NUDGE_MIN_DELAY = 30
 
 
 class WorkflowManager:
@@ -42,7 +40,6 @@ class WorkflowManager:
         self.opencode = OpenCodeClient(config)
         self.session_manager = OpenCodeSessionManager(self.opencode, state)
         self.providers = providers or ProviderManager(config)
-        self._last_nudge: dict[str, datetime] = {}
 
     async def close(self):
         """Close owned HTTP clients."""
@@ -97,16 +94,20 @@ class WorkflowManager:
         return processed
 
     async def _watchdog(self, workflow: WorkflowState) -> bool:
-        """Nudge the agent if a submitted prompt has sat idle without a report signal."""
+        """Nudge the agent at most once per submitted prompt if it sits idle.
+
+        If the signal (report_done/report_stuck) never reaches RepoRover, the
+        nudge flag stays set so we never repeatedly ask the LLM to call the MCP
+        tools and burn budget without benefit. The flag resets when a fresh
+        step prompt is submitted (see execute_task_phase).
+        """
         if not workflow.awaiting_agent or not workflow.opencode_session_id:
             return False
-        key = self.state.get_workflow_key(workflow.repository, workflow.issue_number)
+        if workflow.metadata.get("opencode_nudged"):
+            return False
         now = datetime.now(UTC)
         sent = workflow.opencode_prompt_sent_at
         if sent is None or (now - sent).total_seconds() < WATCHDOG_IDLE_SECONDS:
-            return False
-        last_nudge = self._last_nudge.get(key)
-        if last_nudge is not None and (now - last_nudge).total_seconds() < WATCHDOG_NUDGE_MIN_DELAY:
             return False
         status = await self.session_manager.session_status(workflow.opencode_session_id)
         if status not in ("idle", "unknown"):
@@ -119,8 +120,8 @@ class WorkflowManager:
         result = await self.session_manager.submit_prompt(workflow, prompt)
         if not result.success:
             return False
-        self._last_nudge[key] = now
-        logger.info(f"Nudged agent for {workflow.repository}#{workflow.issue_number}")
+        workflow.metadata["opencode_nudged"] = True
+        logger.info(f"Nudged agent once for {workflow.repository}#{workflow.issue_number}")
         return True
 
     async def _check_stuck_reply(self, workflow: WorkflowState) -> bool:
@@ -159,6 +160,8 @@ class WorkflowManager:
                 "with the result, or report_stuck if you are still blocked."
             )
             await self.session_manager.submit_prompt(workflow, nudge)
+        workflow.metadata["opencode_nudged"] = False
+        self.state.set_workflow(workflow)
 
         try:
             stuck_label = self.config.git_provider.labels.get("stuck", "stuck")
