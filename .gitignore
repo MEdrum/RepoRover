@@ -26,7 +26,7 @@ certs/
 
 # Runtime state, logs, and temporary files
 data/
-state/
+/state/
 tmp/
 temp/
 *.log
