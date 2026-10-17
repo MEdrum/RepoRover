@@ -139,6 +139,9 @@ impact.
 - [ ] Ensure a repository is cloned locally before working on its issues: when a
   repo is found to contain an agent issue, check whether it is already cloned
   and clone it if not.
+- [ ] As the first step of each issue's work cycle, fetch and pull the latest
+  updates from the remote, check which branches exist, and decide which branch
+  or commit to base a new feature branch on.
 - [ ] When concurrency is greater than 1 and concurrent issues from the same
   repository are allowed, create a second, third, etc. clone of the repository
   so changes are performed in separate local working copies (one per concurrent
