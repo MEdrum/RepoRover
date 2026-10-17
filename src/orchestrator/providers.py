@@ -61,7 +61,7 @@ class ProviderManager:
         `provider: both` the repository is probed on GitHub first and then on
         GitLab; the first provider that resolves it owns it. The mapping is
         cached for the lifetime of the manager.
-"""
+        """
         cached = self._repo_provider.get(repository)
         if cached is not None:
             return await self._ensure_provider(cached)

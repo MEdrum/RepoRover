@@ -80,10 +80,25 @@ eligible issue
 
 `STUCK` and `FAILED` are also represented in the state model. On startup the
 orchestrator reconciles provider-side resources (labels, branches, open PRs/MRs)
-against the persisted state. OpenCode tasks that report an in-flight status are
-recorded by their run id and polled on subsequent passes instead of being
-re-submitted or marked failed. The current implementation does not yet provide
-CI polling or merge tracking.
+against the persisted state.
+
+**Agent-driven steps.** The task phases (PLANNING, VERIFICATION_DESIGN,
+WRITE_TESTS, IMPLEMENTING, VERIFY) are executed by the OpenCode agent inside a
+per-repository session. RepoRover submits a step prompt, then the agent signals
+completion through the RepoRover MCP server:
+
+- `report_done(repository, issue_id, result)` — advances the state machine
+  (e.g. the VERIFICATION_DESIGN result declares `AUTOMATED_TESTS: yes|no` to
+  choose WRITE_TESTS vs IMPLEMENTING).
+- `report_stuck(repository, issue_id, block_description)` — marks the workflow
+  STUCK, adds the `stuck` label, and posts the description as an issue comment.
+  RepoRover waits for a human comment, then removes the label and resumes the
+  agent by injecting the reply into its session.
+
+A watchdog nudges the agent once if a submitted step sits idle for ~20s without
+a signal; it never nags repeatedly, so a broken/missing MCP server cannot burn
+LLM budget on repeated tool requests. The current implementation does not yet
+provide CI polling or merge tracking.
 
 ## Architecture
 
@@ -96,7 +111,7 @@ CI polling or merge tracking.
 - [`src/orchestrator/state.py`](src/orchestrator/state.py): JSON workflow state
   and JSONL history.
 - [`src/orchestrator/opencode.py`](src/orchestrator/opencode.py): HTTP client
-  for the OpenCode task API.
+  and session manager for the OpenCode server's session API.
 - [`src/git_provider/`](src/git_provider): common provider models plus GitHub
   and GitLab adapters.
 
@@ -138,21 +153,20 @@ retry:
 opencode:
   api_url: http://opencode:8080
   timeout: 300
-  max_concurrent: 1
+  max_concurrent: 1  # reserved; concurrency not yet enabled
 
 state:
   state_dir: /data/state
   max_history: 1000
 
-memory:
-  api_url: http://agent-memory:8000/api/v1
-  enabled: false
-
 log_level: INFO
 ```
 
-`GITHUB_TOKEN` and `GITLAB_TOKEN` are used as fallbacks when the corresponding
-YAML token is empty. Do not commit `config.yaml`, `.env` files, or tokens.
+`GITHUB_TOKEN`, `GITLAB_TOKEN`, and `OPENCODE_SERVER_PASSWORD` are used as
+fallbacks when the corresponding YAML value is empty. The OpenCode server uses
+HTTP Basic auth with user `opencode`; provide the password via the
+`OPENCODE_SERVER_PASSWORD` environment variable rather than `config.yaml`. Do
+not commit `config.yaml`, `.env` files, or tokens.
 
 At present, `repositories` must contain explicit `owner/repository` entries.
 An empty list does not enable repository discovery.
@@ -190,19 +204,17 @@ resources it finds.
 
 ## Testing
 
-The current [`test_adapters.py`](test_adapters.py) script is a live smoke test.
-It reads `config.yaml`, authenticates with a configured provider, and may list
-issues and labels in the first configured repository:
+The project has an isolated, mocked unit-test suite (no live credentials or
+network access required):
 
 ```bash
-python test_adapters.py
+.venv/bin/python -m pytest tests/ -q
 ```
 
-It requires real credentials and network access. There is currently no isolated
-unit-test suite. A syntax check that does not contact providers is:
+A syntax check that does not contact providers is:
 
 ```bash
-python -m compileall -q src test_adapters.py
+python3 -m compileall -q src
 ```
 
 ## Security notes
@@ -220,10 +232,14 @@ Contributions are welcome. Before opening a pull request:
 1. Create a focused branch from the current default branch.
 2. Keep changes scoped and update the README or configuration example when
    behavior or setup changes.
-3. Run the syntax check and any relevant tests:
+3. Run the checks that CI enforces:
 
    ```bash
-   python -m compileall -q src test_adapters.py
+   python -m compileall -q src
+   ruff check src tests
+   ruff format --check src tests
+   mypy src
+   pytest -q tests/
    ```
 
 4. Explain the motivation, implementation, and verification in the pull

@@ -59,20 +59,20 @@ impact.
 
 ## Correctness and reliability issues
 
-- [ ] Add configuration validation for provider names, repository syntax,
+- [x] Add configuration validation for provider names, repository syntax,
   positive intervals/timeouts, required tokens, label values, and state
   directory writability. Fail fast with actionable messages instead of
   allowing partially valid configuration.
-- [ ] Remove the misleading “empty repositories means all accessible
+- [x] Remove the misleading “empty repositories means all accessible
   repositories” behavior from documentation or implement repository discovery.
   `discover_and_queue()` currently returns immediately when the list is empty.
-- [ ] Avoid broad exception handling that converts malformed state, malformed
+- [x] Avoid broad exception handling that converts malformed state, malformed
   API payloads, and programming errors into silent retries or generic
   `FAILED` states. Preserve exception categories and include structured context.
-- [ ] Make state writes atomic (`temporary file` + `os.replace`) and protect
+- [x] Make state writes atomic (`temporary file` + `os.replace`) and protect
   concurrent reads/writes. A process interruption during `workflows.json`
   writing can destroy all durable workflow state.
-- [ ] Bound or rotate `history.jsonl`. `StateConfig.max_history` is never used,
+- [x] Bound or rotate `history.jsonl`. `StateConfig.max_history` is never used,
   and `OrchestratorState` loads the complete history into memory.
 - [ ] Avoid duplicate API calls in the GitHub adapter, notably resolving the
   repository and labels repeatedly in `list_issues()`. Add pagination and
@@ -84,7 +84,7 @@ impact.
 - [ ] Verify merge-request API compatibility for the pinned `python-gitlab`
   version, especially `merge_method` and `mr.draft`; add mocked adapter tests
   rather than relying on live credentials.
-- [ ] Replace the manual integration script in
+- [x] Replace the manual integration script in
   [`test_adapters.py`](test_adapters.py) with isolated unit tests using mocked
   provider/OpenCode clients. The current script reads live credentials and can
   mutate/read real repositories.
@@ -97,22 +97,25 @@ impact.
 
 ## Unclean or incomplete implementation
 
-- [ ] Remove unused imports and duplicated provider/client construction.
-- [ ] Use timezone-aware UTC timestamps instead of deprecated naive
+- [x] Remove unused imports and duplicated provider/client construction.
+- [x] Use timezone-aware UTC timestamps instead of deprecated naive
   `datetime.utcnow()`.
 - [ ] Replace magic values (`5` second workflow delay, `5000` GitHub limit,
   `/app/config.yaml`) with validated configuration or constants.
 - [ ] Either implement memory and webhook configuration or remove it from the
   public configuration/documentation until it is wired into the runtime.
-- [ ] Decide whether OpenCode is synchronous. The current workflow assumes the
-  POST response contains the final output, while the client exposes status and
-  cancellation methods that are never integrated.
+- [x] OpenCode is asynchronous and session-based. One session per repository,
+  prompts are submitted via /prompt_async, completion is detected by polling
+  /session/status and /session/{id}/message, and abort/health endpoints are
+  wired into the client.
 - [ ] Define whether a successful workflow means “PR/MR created” or “change
   merged.” The current code marks the workflow `COMPLETED` immediately after
   creating a review request and never observes review/merge state.
 - [ ] Add structured metrics/health reporting for discovery failures, queue
   depth, phase duration, retries, provider rate limits, and OpenCode health.
 
+
+- [ ] Add type annotations to the `git_provider` adapter layer (currently excluded from mypy via pyproject overrides).
 ## Potential future features
 
 - [ ] Webhook-triggered discovery with signature verification and deduplication,
@@ -133,6 +136,42 @@ impact.
   values or environment interpolation in compose files.
 - [ ] Provider capability negotiation so unsupported operations are surfaced
   before a workflow starts.
+- [ ] Ensure a repository is cloned locally before working on its issues: when a
+  repo is found to contain an agent issue, check whether it is already cloned
+  and clone it if not.
+- [ ] As the first step of each issue's work cycle, fetch and pull the latest
+  updates from the remote, check which branches exist, and decide which branch
+  or commit to base a new feature branch on.
+- [ ] When concurrency is greater than 1 and concurrent issues from the same
+  repository are allowed, create a second, third, etc. clone of the repository
+  so changes are performed in separate local working copies (one per concurrent
+  workflow).
+- [ ] Metrics & a RepoRover Dashboard. Collect token usage, cost, and work
+  duration per phase and per issue, and surface them (alongside queue depth,
+  phase duration, retries, provider rate limits, OpenCode health) in a small
+  dashboard UI.
+- [ ] Dashboard "Create new project" flow:
+  - A button opens a text area to paste a project description (e.g. a markdown
+    file explaining what to build).
+  - An LLM analyzes the description and returns structured output containing at
+    least the repository name (or null) and a short GitHub description
+    (extensible with more fields later).
+  - RepoRover creates the repository (or asks for the name if null), then gives
+    Opencode the task to pull the repo, analyze the markdown, and scaffold:
+    - `README.md` following the user's README template (see preferences);
+    - a license (`MIT` unless the input specifies otherwise);
+    - contributing information based on the user's contributing preferences;
+    - a pipeline (or stub) for code-quality checks, linting, tests, etc.
+- [ ] Generate README.md from the user's template preferences:
+  - A table of contents at the top, then a project description, a getting
+    started guide, and a high-level overview; then, in a sensible order:
+    design decisions, project structure, detailed implementation information,
+    API definition(s), how to test, and any additional project information.
+  - A section for non-trivial "issues encountered and how they were solved"
+    (trial-and-error) may be included.
+- [ ] Contributing guidelines that emphasize conventional branching and commit
+  messages, with a commit footer referencing the issues related to or closed by
+  the commit.
 
 ## Validation performed
 
