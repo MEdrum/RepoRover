@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 from github import Github, GithubException, RateLimitExceededException
 from github.Branch import Branch as GHBranch
 from github.Issue import Issue as GHIssue
+from github.IssueComment import IssueComment
 from github.Label import Label as GHLabel
 from github.PullRequest import PullRequest as GHPullRequest
 from github.Repository import Repository as GHRepository
@@ -82,7 +83,7 @@ class GitHubProvider(GitProvider):
             except Exception:
                 logger.debug("Failed to refresh GitHub rate-limit info")
 
-    async def check_rate_limit(self) -> dict[str, Any]:
+    async def check_rate_limit(self) -> dict[str, int | str]:
         """Check current rate limit status."""
         self._check_rate_limit()
         return {"remaining": self._rate_limit_remaining, "reset_at": self._rate_limit_reset, "limit": 5000}
@@ -145,7 +146,7 @@ class GitHubProvider(GitProvider):
             repository=repo_full_name,
         )
 
-    def _comment_to_model(self, comment: Any) -> Comment:
+    def _comment_to_model(self, comment: IssueComment) -> Comment:
         """Convert GitHub comment to model."""
         return Comment(
             id=str(comment.id),

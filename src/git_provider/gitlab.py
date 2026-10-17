@@ -17,6 +17,7 @@ from gitlab.exceptions import (
     GitlabRateLimitError,
     GitlabUpdateError,
 )
+from gitlab.v4 import objects as gl_objects
 
 from . import (
     AuthenticationError,
@@ -96,7 +97,7 @@ class GitLabProvider(GitProvider):
         else:
             raise ProviderError(f"GitLab error during {operation}: {e}", "unknown", e)
 
-    def _project_to_model(self, project: Any) -> Repository:
+    def _project_to_model(self, project: gl_objects.Project) -> Repository:
         """Convert GitLab project to model."""
         return Repository(
             id=str(project.id),
@@ -111,7 +112,7 @@ class GitLabProvider(GitProvider):
             description=project.description,
         )
 
-    def _issue_to_model(self, issue: Any, project_path: str) -> Issue:
+    def _issue_to_model(self, issue: gl_objects.Issue, project_path: str) -> Issue:
         """Convert GitLab issue to model."""
         labels = (
             [label["name"] if isinstance(label, dict) else label.name for label in issue.labels] if issue.labels else []
@@ -137,7 +138,7 @@ class GitLabProvider(GitProvider):
             repository=project_path,
         )
 
-    def _comment_to_model(self, note: Any, project_path: str) -> Comment:
+    def _comment_to_model(self, note: gl_objects.ProjectIssueNote, project_path: str) -> Comment:
         """Convert GitLab note to model."""
         return Comment(
             id=str(note.id),
@@ -148,11 +149,11 @@ class GitLabProvider(GitProvider):
             html_url=f"{self.url}/{project_path}/-/issues/{note.noteable_iid}#note_{note.id}",
         )
 
-    def _label_to_model(self, label: Any) -> Label:
+    def _label_to_model(self, label: gl_objects.ProjectLabel) -> Label:
         """Convert GitLab label to model."""
         return Label(name=label.name, color=label.color, description=label.description)
 
-    def _mr_to_model(self, mr: Any, project_path: str) -> PullRequest:
+    def _mr_to_model(self, mr: gl_objects.ProjectMergeRequest, project_path: str) -> PullRequest:
         """Convert GitLab MR to model."""
         return PullRequest(
             number=mr.iid,
@@ -172,7 +173,7 @@ class GitLabProvider(GitProvider):
             repository=project_path,
         )
 
-    def _branch_to_model(self, branch: Any) -> Branch:
+    def _branch_to_model(self, branch: gl_objects.ProjectBranch) -> Branch:
         """Convert GitLab branch to model."""
         return Branch(
             name=branch.name,
@@ -427,7 +428,7 @@ class GitLabProvider(GitProvider):
         except Exception as e:
             self._handle_gitlab_exception(e, f"create_label({owner}/{repo}, {name})")
 
-    async def check_rate_limit(self) -> dict[str, Any]:
+    async def check_rate_limit(self) -> dict[str, int | str]:
         """Check current rate limit status."""
         # GitLab doesn't expose rate limit in the same way
         return {"remaining": "unknown", "reset_at": 0, "limit": "unknown"}

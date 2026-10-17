@@ -312,7 +312,7 @@ class GitProvider(ABC):
 
     # Utility
     @abstractmethod
-    async def check_rate_limit(self) -> dict[str, Any]:
+    async def check_rate_limit(self) -> dict[str, int | str]:
         """Check current rate limit status."""
 
 
