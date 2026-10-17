@@ -1,221 +1,222 @@
 """
-OpenCode Client
+OpenCode client and session management.
 
-Handles communication with the OpenCode runtime for task execution.
+Talks to the OpenCode HTTP server's real session API:
+
+- POST   /session                        -> create a session, returns {"id"}
+- POST   /session/{id}/prompt_async      -> submit a prompt asynchronously (204)
+- GET    /session/status                 -> {sessionID: {type: idle|busy|retry, ...}}
+- GET    /session/{id}/message           -> [{info, parts}] (assistant text in parts)
+- POST   /session/{id}/abort             -> cancel a running turn
+- GET    /global/health                  -> health check
+
+Auth is HTTP Basic (user "opencode", password from OPENCODE_SERVER_PASSWORD).
 """
 
-import asyncio
-import json
+import base64
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from datetime import UTC, datetime
+from typing import Any
+
 import httpx
 
 from orchestrator.config import OrchestratorConfig
+from orchestrator.state import OrchestratorState, WorkflowState
 
 logger = logging.getLogger(__name__)
 
 
+class OpenCodeError(Exception):
+    """Base error for OpenCode API failures."""
+
+
 @dataclass
 class OpenCodeTask:
-    """Task to send to OpenCode."""
+    """A prompt submitted to OpenCode for a workflow phase."""
+
     repository: str
     project: str
     branch: str
     issue_number: int
     issue_title: str
     issue_body: str
-    issue_labels: List[str]
+    issue_labels: list[str]
     phase: str
     instructions: str
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     run_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
 
 @dataclass
 class OpenCodeResult:
-    """Result from OpenCode execution."""
+    """Result of an OpenCode interaction."""
+
     success: bool
     output: str = ""
     error: str = ""
     run_id: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     pending: bool = False
 
 
 class OpenCodeClient:
-    """Client for invoking OpenCode tasks."""
-    
+    """HTTP client for the OpenCode session API."""
+
     def __init__(self, config: OrchestratorConfig):
-        self.config = config
+        """Build a client for the OpenCode session API."""
         self.api_url = config.opencode.api_url.rstrip("/")
         self.timeout = config.opencode.timeout
-        self._client: Optional[httpx.AsyncClient] = None
-    
+        password = config.opencode.password
+        credentials = base64.b64encode(f"opencode:{password}".encode()).decode()
+        self._auth_header = {"Authorization": f"Basic {credentials}"}
+        self._client: httpx.AsyncClient | None = None
+
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Return the shared httpx client, creating it on first use."""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.api_url,
                 timeout=self.timeout,
-                limits=httpx.Limits(max_connections=5)
+                limits=httpx.Limits(max_connections=5),
             )
         return self._client
-    
-    async def close(self):
+
+    async def close(self) -> None:
         """Close HTTP client."""
         if self._client:
             await self._client.aclose()
             self._client = None
-    
-    def _parse_result(self, response: httpx.Response, run_id: str) -> OpenCodeResult:
-        """Parse and validate a task response body.
 
-        The contract is synchronous: the response body must contain an explicit
-        boolean `success` flag (plus optional output/error/metadata). A missing or
-        invalid `success` is treated as a malformed response, never as success.
-"""
-        try:
-            data = response.json()
-        except ValueError:
-            return OpenCodeResult(
-                success=False,
-                error=f"Malformed OpenCode response (not JSON): {response.text}",
-                run_id=run_id
-            )
-        if not isinstance(data, dict):
-            return OpenCodeResult(
-                success=False,
-                error=f"Malformed OpenCode response: expected JSON object, got {type(data).__name__}",
-                run_id=run_id
-            )
-        success = data.get("success")
-        if not isinstance(success, bool):
-            return OpenCodeResult(
-                success=False,
-                error="Malformed OpenCode response: missing or invalid boolean 'success' field",
-                run_id=run_id
-            )
-        if str(data.get("status", "")).lower() in ("queued", "running", "accepted", "pending"):
-            return OpenCodeResult(
-                success=True,
-                pending=True,
-                run_id=data.get("run_id") or run_id,
-                metadata=data.get("metadata", {}) if isinstance(data.get("metadata", {}), dict) else {},
-            )
-        output = data.get("output", "")
-        error = data.get("error", "")
-        metadata = data.get("metadata", {})
-        return OpenCodeResult(
-            success=success,
-            output=output if isinstance(output, str) else "",
-            error=error if isinstance(error, str) else "",
-            run_id=run_id,
-            metadata=metadata if isinstance(metadata, dict) else {}
+    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Perform an authenticated request to the OpenCode API."""
+        client = await self._get_client()
+        kwargs.setdefault("headers", {}).update(self._auth_header)
+        return await client.request(method, path, **kwargs)
+
+    async def create_session(self, title: str) -> str:
+        """Create a session and return its id."""
+        response = await self._request("POST", "/session", json={"title": title})
+        if response.status_code >= 400:
+            raise OpenCodeError(f"create_session failed: HTTP {response.status_code}: {response.text}")
+        data = response.json()
+        session_id = data.get("id")
+        if not session_id:
+            raise OpenCodeError("create_session response missing 'id'")
+        return session_id
+
+    async def session_status(self, session_id: str) -> str:
+        """Return the session status type: idle, busy, or retry."""
+        response = await self._request("GET", "/session/status")
+        if response.status_code >= 400:
+            raise OpenCodeError(f"session_status failed: HTTP {response.status_code}: {response.text}")
+        data = response.json()
+        status = (data or {}).get(session_id, {}).get("type")
+        if status not in ("idle", "busy", "retry"):
+            logger.warning(f"Unknown session status for {session_id}: {status!r}")
+            return "idle"
+        return status
+
+    async def submit_prompt_async(self, session_id: str, text: str) -> None:
+        """Submit a prompt to a session without waiting for the response."""
+        response = await self._request(
+            "POST",
+            f"/session/{session_id}/prompt_async",
+            json={"parts": [{"type": "text", "text": text}]},
         )
-    
-    async def run_task(self, task: OpenCodeTask) -> OpenCodeResult:
-        """Run a task via OpenCode.
+        if response.status_code >= 400:
+            raise OpenCodeError(f"prompt_async failed: HTTP {response.status_code}: {response.text}")
 
-        The task API is treated as synchronous: a 200/201/202 response
-        carries the completed task result, which must include an explicit
-        boolean `success`. Non-2xx statuses or malformed bodies are failures.
-"""
-        logger.info(f"Running OpenCode task {task.run_id} for {task.repository}#{task.issue_number} [{task.phase}]")
-        
+    async def get_messages(self, session_id: str) -> list[dict]:
+        """Return the message list for a session."""
+        response = await self._request("GET", f"/session/{session_id}/message")
+        if response.status_code >= 400:
+            raise OpenCodeError(f"get_messages failed: HTTP {response.status_code}: {response.text}")
+        data = response.json()
+        if not isinstance(data, list):
+            raise OpenCodeError("get_messages response is not a list")
+        return data
+
+    async def abort(self, session_id: str) -> bool:
+        """Cancel the running turn of a session."""
         try:
-            client = await self._get_client()
-            
-            # Prepare task payload
-            payload = {
-                "run_id": task.run_id,
-                "repository": task.repository,
-                "project": task.project,
-                "branch": task.branch,
-                "issue_number": task.issue_number,
-                "issue_title": task.issue_title,
-                "issue_body": task.issue_body,
-                "issue_labels": task.issue_labels,
-                "phase": task.phase,
-                "instructions": task.instructions,
-                "context": task.context
-            }
-            
-            # Call OpenCode API
-            # Note: This assumes OpenCode has a /api/v1/tasks endpoint
-            # The actual endpoint may need to be adjusted based on OpenCode's API
-            response = await client.post(
-                "/api/v1/tasks",
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if response.status_code in (200, 201, 202):
-                return self._parse_result(response, task.run_id)
-            else:
-                error_text = response.text
-                logger.error(f"OpenCode API error {response.status_code}: {error_text}")
-                return OpenCodeResult(
-                    success=False,
-                    error=f"OpenCode API error {response.status_code}: {error_text}",
-                    run_id=task.run_id
-                )
-                
-        except httpx.TimeoutException:
-            logger.error(f"OpenCode task {task.run_id} timed out after {self.timeout}s")
-            return OpenCodeResult(
-                success=False,
-                error=f"Task timed out after {self.timeout}s",
-                run_id=task.run_id
-            )
-        except httpx.ConnectError as e:
-            logger.error(f"Cannot connect to OpenCode at {self.api_url}: {e}")
-            return OpenCodeResult(
-                success=False,
-                error=f"Cannot connect to OpenCode: {e}",
-                run_id=task.run_id
-            )
+            response = await self._request("POST", f"/session/{session_id}/abort")
+            return response.status_code < 400
         except Exception as e:
-            logger.error(f"OpenCode task {task.run_id} failed: {e}")
-            return OpenCodeResult(
-                success=False,
-                error=str(e),
-                run_id=task.run_id
-            )
-    
-    async def get_task_status(self, run_id: str) -> Optional[OpenCodeResult]:
-        """Get status of a running task."""
-        try:
-            client = await self._get_client()
-            response = await client.get(f"/api/v1/tasks/{run_id}")
-            
-            if response.status_code in (200, 201, 202):
-                return self._parse_result(response, run_id)
-            elif response.status_code == 404:
-                return None
-            else:
-                logger.error(f"OpenCode status error {response.status_code}: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to get task status: {e}")
-            return None
-    
-    async def cancel_task(self, run_id: str) -> bool:
-        """Cancel a running task."""
-        try:
-            client = await self._get_client()
-            response = await client.post(f"/api/v1/tasks/{run_id}/cancel")
-            return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Failed to cancel task: {e}")
+            logger.error(f"Failed to abort session {session_id}: {e}")
             return False
-    
+
     async def health_check(self) -> bool:
-        """Check if OpenCode is healthy."""
+        """Check whether the OpenCode server is healthy."""
         try:
-            client = await self._get_client()
-            response = await client.get("/health", timeout=5)
+            response = await self._request("GET", "/global/health", timeout=5)
             return response.status_code == 200
         except Exception:
             return False
+
+    @staticmethod
+    def latest_assistant_message(messages: list[dict]) -> dict | None:
+        """Return the last assistant message from a message list, if any."""
+        for message in reversed(messages):
+            if message.get("info", {}).get("role") == "assistant":
+                return message
+        return None
+
+    @staticmethod
+    def assistant_text(message: dict | None) -> str:
+        """Extract concatenated text-part content from an assistant message."""
+        if not message:
+            return ""
+        parts = message.get("parts", []) or []
+        return "".join(part.get("text", "") for part in parts if part.get("type") == "text")
+
+
+class OpenCodeSessionManager:
+    """Manages one OpenCode session per repository.
+
+    The agent works inside the session and signals step completion directly to
+    RepoRover via the MCP tools (report_done / report_stuck); RepoRover only
+    submits prompts (or injected continuation messages) to the session and
+    reads its status for the inactivity watchdog.
+    """
+
+    def __init__(self, client: OpenCodeClient, state: OrchestratorState):
+        """Manage one OpenCode session per repository."""
+        self.client = client
+        self.state = state
+        self._repo_session: dict[str, str] = {}
+
+    async def ensure_session(self, workflow: WorkflowState) -> str:
+        """Resolve the session for a repository, creating one if needed."""
+        repo = workflow.repository
+        session_id = self._repo_session.get(repo)
+        if session_id is None:
+            # Adopt an existing session persisted on another workflow of this repo.
+            for other in self.state.list_workflows():
+                if other.repository == repo and other.opencode_session_id:
+                    session_id = other.opencode_session_id
+                    break
+        if session_id is None:
+            session_id = await self.client.create_session(f"RepoRover: {repo}")
+        self._repo_session[repo] = session_id
+        workflow.opencode_session_id = session_id
+        return session_id
+
+    async def submit_prompt(self, workflow: WorkflowState, text: str) -> OpenCodeResult:
+        """Submit a prompt (phase step or continuation) to the repository's session."""
+        session_id = await self.ensure_session(workflow)
+        try:
+            await self.client.submit_prompt_async(session_id, text)
+        except Exception as e:
+            return OpenCodeResult(success=False, error=f"OpenCode submit failed: {e}", run_id=session_id)
+        workflow.opencode_prompt_sent_at = datetime.now(UTC)
+        return OpenCodeResult(success=True, run_id=session_id, pending=True)
+
+    async def session_status(self, session_id: str) -> str:
+        """Return the session status type (idle, busy, retry, unknown)."""
+        try:
+            return await self.client.session_status(session_id)
+        except Exception as e:
+            logger.warning(f"Failed to read session status {session_id}: {e}")
+            return "unknown"

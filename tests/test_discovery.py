@@ -6,16 +6,16 @@ from unittest import mock
 from git_provider import Issue, NotFoundError, ProviderType
 from orchestrator.config import OrchestratorConfig
 from orchestrator.discovery import IssueDiscovery
-from orchestrator.state import OrchestratorState, WorkflowPhase
+from orchestrator.state import OrchestratorState, WorkflowPhase, WorkflowState
 
 
-def _issue(number=1):
+def _issue(number=1, labels=None):
     return Issue(
         number=number,
         title="Fix bug",
         body="",
         state="open",
-        labels=["agent"],
+        labels=["agent"] if labels is None else labels,
         assignees=[],
         author="tester",
         created_at="",
@@ -103,3 +103,47 @@ class TestDiscoveryWithBothProviders:
         assert state.get_workflow("glorg/repo", 2) is not None
         assert github.list_eligible_calls[0][:2] == ("ghorg", "repo")
         assert gitlab.list_eligible_calls[0][:2] == ("glorg", "repo")
+
+
+class StuckIssueProvider:
+    """Fake provider whose get_issue returns scripted label sets."""
+
+    def __init__(self, labels_by_issue):
+        self.labels_by_issue = labels_by_issue
+
+    async def authenticate(self):
+        return True
+
+    async def get_issue(self, owner, repo, number):
+        return _issue(number=number, labels=self.labels_by_issue.get(number, []))
+
+
+class TestRequeueStuckWorkflows:
+    def test_resumes_when_stuck_label_removed(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(_config(str(tmp_path)), state)
+        provider = StuckIssueProvider(labels_by_issue={1: ["doing"]})
+        workflow = WorkflowState(
+            issue_number=1, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting"
+        )
+        state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            requeued = asyncio.run(discovery.requeue_stuck_workflows())
+        assert requeued == 1
+        wf = state.get_workflow("owner/repo", 1)
+        assert wf.phase == WorkflowPhase.PLANNING
+        assert wf.stuck_reason == ""
+
+    def test_keeps_waiting_when_stuck_label_present(self, tmp_path):
+        state = OrchestratorState(str(tmp_path))
+        discovery = IssueDiscovery(_config(str(tmp_path)), state)
+        provider = StuckIssueProvider(labels_by_issue={2: ["stuck"]})
+        workflow = WorkflowState(
+            issue_number=2, repository="owner/repo", project="repo", phase=WorkflowPhase.STUCK, stuck_reason="waiting"
+        )
+        state.set_workflow(workflow)
+        with mock.patch("git_provider.create_provider", return_value=provider):
+            requeued = asyncio.run(discovery.requeue_stuck_workflows())
+        assert requeued == 0
+        wf = state.get_workflow("owner/repo", 2)
+        assert wf.phase == WorkflowPhase.STUCK

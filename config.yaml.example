@@ -1,9 +1,10 @@
-# Git Provider Configuration
-# Copy this to config.yaml and fill in your credentials
+# RepoRover configuration
+# Copy this to config.yaml and fill in your credentials.
+# Do NOT commit config.yaml or any file containing secrets.
 
-# Provider selection: "github", "gitlab", or "both" (discover/process issues on
-# both providers; repositories are routed to the provider that owns them, probed
-# GitHub-first. "both" requires both tokens.)
+# Provider selection: "github", "gitlab", or "both".
+# "both" runs GitHub and GitLab side by side; each repository is routed to the
+# provider that owns it (probed GitHub-first) and requires both tokens.
 provider: "github"
 
 # GitHub Configuration
@@ -35,19 +36,10 @@ labels:
 
 # Repository Configuration
 repositories:
-  # List of repositories to monitor (owner/repo format)
-  # Empty means all accessible repositories
+  # Explicit owner/repo entries to monitor. An empty list disables discovery
+  # (there is no "discover all accessible repositories" mode).
   - "owner/repo1"
   # - "owner/repo2"
-
-# Rate Limiting
-rate_limit:
-  github:
-    requests_per_hour: 5000
-    buffer: 100  # Keep this many requests in reserve
-  gitlab:
-    requests_per_minute: 600
-    buffer: 50
 
 # Polling Configuration
 polling:
@@ -61,8 +53,27 @@ retry:
   max_delay_seconds: 60
   exponential_base: 2
 
-# Webhook Configuration (optional)
-webhook:
-  enabled: false
-  secret: ""  # Webhook secret for verification
-  url: ""     # Public URL for webhook delivery
+# OpenCode service (the agent that performs the coding work)
+opencode:
+  api_url: "http://opencode:8080"
+  timeout: 300  # seconds per request
+  max_concurrent: 1  # backpressure/concurrency target for discovery
+  # The server uses HTTP Basic auth with user "opencode". Provide the password
+  # via the OPENCODE_SERVER_PASSWORD environment variable instead of this file.
+  # password: ""
+
+# MCP server for the agent's report tools (report_done / report_stuck).
+# No auth: reachable over the docker network. Configure opencode to connect to
+# http://<repo-rover-container>:8000/mcp
+mcp:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  path: "/mcp"
+
+# State persistence
+state:
+  state_dir: "/data/state"
+  max_history: 1000
+
+log_level: "INFO"
