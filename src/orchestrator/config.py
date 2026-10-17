@@ -140,6 +140,7 @@ class OrchestratorConfig:
 
 
 def _git_provider_from_dict(data: dict) -> GitProviderConfig:
+    """Build GitProviderConfig from a YAML dict, applying env fallbacks for tokens."""
     defaults = GitProviderConfig()
     github = data.get("github", {}) or {}
     gitlab = data.get("gitlab", {}) or {}
@@ -158,6 +159,7 @@ def _git_provider_from_dict(data: dict) -> GitProviderConfig:
 
 
 def _opencode_from_dict(data: dict) -> OpenCodeConfig:
+    """Build OpenCodeConfig from a YAML dict, applying the env password fallback."""
     defaults = OpenCodeConfig()
     return OpenCodeConfig(
         api_url=data.get("api_url", defaults.api_url),
@@ -168,6 +170,7 @@ def _opencode_from_dict(data: dict) -> OpenCodeConfig:
 
 
 def _state_from_dict(data: dict) -> StateConfig:
+    """Build StateConfig from a YAML dict."""
     defaults = StateConfig()
     return StateConfig(
         state_dir=data.get("state_dir", defaults.state_dir),
@@ -176,6 +179,7 @@ def _state_from_dict(data: dict) -> StateConfig:
 
 
 def _retry_from_dict(data: dict) -> RetryConfig:
+    """Build RetryConfig from a YAML dict."""
     defaults = RetryConfig()
     return RetryConfig(
         max_attempts=data.get("max_attempts", defaults.max_attempts),
@@ -186,6 +190,7 @@ def _retry_from_dict(data: dict) -> RetryConfig:
 
 
 def _mcp_from_dict(data: dict) -> MCPConfig:
+    """Build MCPConfig from a YAML dict."""
     defaults = MCPConfig()
     return MCPConfig(
         enabled=data.get("enabled", defaults.enabled),

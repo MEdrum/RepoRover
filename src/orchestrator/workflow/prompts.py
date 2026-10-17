@@ -9,8 +9,12 @@ the session, then signals completion by calling the RepoRover MCP tools
 
 import re
 
+from git_provider import Issue
+from orchestrator.state import WorkflowState
 
-def _step_footer(workflow) -> str:
+
+def _step_footer(workflow: WorkflowState) -> str:
+    """Append the agent-driven report_done/report_stuck footer to a step prompt."""
     return f"""When you have finished this step, call the tool `report_done` with:
 - repository: {workflow.repository}
 - issue_id: {workflow.issue_number}
@@ -24,7 +28,7 @@ If you need user input or a design decision to continue, call `report_stuck` wit
 Do not proceed to the next step yourself; RepoRover advances the workflow when you report done."""
 
 
-def build_planning_prompt(issue, workflow) -> str:
+def build_planning_prompt(issue: Issue, workflow: WorkflowState) -> str:
     """Build the planning prompt for OpenCode."""
     return f"""You are an autonomous coding agent. Analyze this issue and create a detailed implementation plan.
 
@@ -70,7 +74,7 @@ Do not implement anything yet. Only create the plan.
 {_step_footer(workflow)}"""
 
 
-def build_verification_design_prompt(issue, workflow) -> str:
+def build_verification_design_prompt(issue: Issue, workflow: WorkflowState) -> str:
     """Build the verification design prompt (testability step)."""
     return f"""Based on the issue and your plan, design a verification strategy.
 
@@ -105,7 +109,7 @@ AUTOMATED_TESTS: no
 {_step_footer(workflow)}"""
 
 
-def build_write_tests_prompt(issue, workflow) -> str:
+def build_write_tests_prompt(issue: Issue, workflow: WorkflowState) -> str:
     """Build the write-tests prompt."""
     return f"""Write tests for the issue based on the verification plan.
 
@@ -131,7 +135,7 @@ Focus on the automated test portion of the verification plan. Do not implement t
 {_step_footer(workflow)}"""
 
 
-def build_implementation_prompt(issue, workflow) -> str:
+def build_implementation_prompt(issue: Issue, workflow: WorkflowState) -> str:
     """Build the implementation prompt."""
     return f"""Implement the feature/fix based on your plan and tests.
 
@@ -158,7 +162,7 @@ Do not modify the tests you wrote. Make the implementation satisfy them.
 {_step_footer(workflow)}"""
 
 
-def build_verification_prompt(issue, workflow) -> str:
+def build_verification_prompt(issue: Issue, workflow: WorkflowState) -> str:
     """Build the verification prompt."""
     return f"""Run verification for the implemented changes.
 

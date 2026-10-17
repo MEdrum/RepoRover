@@ -6,7 +6,7 @@ Implements the GitProvider interface for GitLab API.
 
 import logging
 import os
-from typing import Any
+from typing import Any, NoReturn
 
 import gitlab
 from gitlab.exceptions import (
@@ -45,6 +45,7 @@ class GitLabProvider(GitProvider):
     """GitLab API provider implementation."""
 
     def __init__(self, config: dict[str, Any]):
+        """Create a GitLab API provider from a config dict."""
         super().__init__(config)
         self.token = config.get("token") or os.environ.get("GITLAB_TOKEN")
         self.url = config.get("url", "https://gitlab.com")
@@ -66,7 +67,7 @@ class GitLabProvider(GitProvider):
         except Exception as e:
             raise NetworkError(f"GitLab connection failed: {e}", e) from e
 
-    def _handle_gitlab_exception(self, e: Exception, operation: str):
+    def _handle_gitlab_exception(self, e: Exception, operation: str) -> NoReturn:
         """Convert GitLab exceptions to provider errors."""
         if isinstance(e, GitlabAuthenticationError):
             raise AuthenticationError(f"GitLab authentication failed during {operation}: {e}", e)
@@ -95,7 +96,7 @@ class GitLabProvider(GitProvider):
         else:
             raise ProviderError(f"GitLab error during {operation}: {e}", "unknown", e)
 
-    def _project_to_model(self, project) -> Repository:
+    def _project_to_model(self, project: Any) -> Repository:
         """Convert GitLab project to model."""
         return Repository(
             id=str(project.id),
@@ -110,7 +111,7 @@ class GitLabProvider(GitProvider):
             description=project.description,
         )
 
-    def _issue_to_model(self, issue, project_path: str) -> Issue:
+    def _issue_to_model(self, issue: Any, project_path: str) -> Issue:
         """Convert GitLab issue to model."""
         labels = (
             [label["name"] if isinstance(label, dict) else label.name for label in issue.labels] if issue.labels else []
@@ -136,7 +137,7 @@ class GitLabProvider(GitProvider):
             repository=project_path,
         )
 
-    def _comment_to_model(self, note, project_path: str) -> Comment:
+    def _comment_to_model(self, note: Any, project_path: str) -> Comment:
         """Convert GitLab note to model."""
         return Comment(
             id=str(note.id),
@@ -147,11 +148,11 @@ class GitLabProvider(GitProvider):
             html_url=f"{self.url}/{project_path}/-/issues/{note.noteable_iid}#note_{note.id}",
         )
 
-    def _label_to_model(self, label) -> Label:
+    def _label_to_model(self, label: Any) -> Label:
         """Convert GitLab label to model."""
         return Label(name=label.name, color=label.color, description=label.description)
 
-    def _mr_to_model(self, mr, project_path: str) -> PullRequest:
+    def _mr_to_model(self, mr: Any, project_path: str) -> PullRequest:
         """Convert GitLab MR to model."""
         return PullRequest(
             number=mr.iid,
@@ -171,7 +172,7 @@ class GitLabProvider(GitProvider):
             repository=project_path,
         )
 
-    def _branch_to_model(self, branch) -> Branch:
+    def _branch_to_model(self, branch: Any) -> Branch:
         """Convert GitLab branch to model."""
         return Branch(
             name=branch.name,

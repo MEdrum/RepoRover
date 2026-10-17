@@ -28,6 +28,7 @@ class OrchestratorState:
     """Manages durable orchestrator state."""
 
     def __init__(self, state_dir: str, max_history: int = 1000):
+        """Create the store rooted at state_dir, keeping at most max_history history entries."""
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.workflows_file = self.state_dir / "workflows.json"
@@ -36,7 +37,7 @@ class OrchestratorState:
         self._workflows: dict[str, WorkflowState] = {}
         self._history: list[dict[str, Any]] = []
 
-    async def load(self):
+    async def load(self) -> None:
         """Load state from disk."""
         if self.workflows_file.exists():
             try:
@@ -59,12 +60,13 @@ class OrchestratorState:
             except Exception as e:
                 logger.error(f"Failed to load history: {e}")
 
-    async def save(self):
+    async def save(self) -> None:
         """Save state to disk atomically."""
         self._save_workflows()
         self._append_history()
 
-    def _save_workflows(self):
+    def _save_workflows(self) -> None:
+        """Atomically write the workflows file."""
         data = {
             "schema_version": SCHEMA_VERSION,
             "workflows": {key: wf.to_dict() for key, wf in self._workflows.items()},
@@ -82,7 +84,8 @@ class OrchestratorState:
         except Exception as e:
             logger.error(f"Failed to save workflows: {e}")
 
-    def _append_history(self):
+    def _append_history(self) -> None:
+        """Append pending history entries to disk and trim to max_history."""
         if not self._history:
             return
         try:
@@ -93,7 +96,8 @@ class OrchestratorState:
         except Exception as e:
             logger.error(f"Failed to save history: {e}")
 
-    def _trim_history(self):
+    def _trim_history(self) -> None:
+        """Trim the history file to the newest max_history entries."""
         if self.max_history <= 0:
             return
         if not self.history_file.exists():
@@ -115,7 +119,7 @@ class OrchestratorState:
         key = self.get_workflow_key(repository, issue_number)
         return self._workflows.get(key)
 
-    def set_workflow(self, workflow: WorkflowState):
+    def set_workflow(self, workflow: WorkflowState) -> None:
         """Set workflow state."""
         key = self.get_workflow_key(workflow.repository, workflow.issue_number)
         now = datetime.now(UTC)
@@ -125,7 +129,7 @@ class OrchestratorState:
         self._workflows[key] = workflow
         self._add_history("workflow_updated", workflow.to_dict())
 
-    def remove_workflow(self, repository: str, issue_number: int):
+    def remove_workflow(self, repository: str, issue_number: int) -> None:
         """Remove workflow state."""
         key = self.get_workflow_key(repository, issue_number)
         if key in self._workflows:
@@ -146,7 +150,7 @@ class OrchestratorState:
         """List stuck workflows."""
         return [wf for wf in self._workflows.values() if wf.phase == WorkflowPhase.STUCK]
 
-    def _add_history(self, event: str, data: dict[str, Any]):
+    def _add_history(self, event: str, data: dict[str, Any]) -> None:
         """Add history entry."""
         self._history.append(
             {

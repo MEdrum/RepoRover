@@ -7,7 +7,7 @@ Implements the GitProvider interface for GitHub API.
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import Any, NoReturn
 
 from github import Github, GithubException, RateLimitExceededException
 from github.Branch import Branch as GHBranch
@@ -43,6 +43,7 @@ class GitHubProvider(GitProvider):
     """GitHub API provider implementation."""
 
     def __init__(self, config: dict[str, Any]):
+        """Create a GitHub API provider from a config dict."""
         super().__init__(config)
         self.token = config.get("token") or os.environ.get("GITHUB_TOKEN")
         self.base_url = config.get("base_url", "https://api.github.com")
@@ -71,7 +72,7 @@ class GitHubProvider(GitProvider):
         except Exception as e:
             raise NetworkError(f"GitHub connection failed: {e}", e) from e
 
-    def _check_rate_limit(self):
+    def _check_rate_limit(self) -> None:
         """Check and update rate limit info."""
         if self._client:
             try:
@@ -86,7 +87,7 @@ class GitHubProvider(GitProvider):
         self._check_rate_limit()
         return {"remaining": self._rate_limit_remaining, "reset_at": self._rate_limit_reset, "limit": 5000}
 
-    def _handle_github_exception(self, e: GithubException, operation: str):
+    def _handle_github_exception(self, e: GithubException, operation: str) -> NoReturn:
         """Convert GitHub exceptions to provider errors."""
         if isinstance(e, RateLimitExceededException):
             reset_time = e.rate_limit.reset.timestamp() if e.rate_limit else 0
@@ -144,7 +145,7 @@ class GitHubProvider(GitProvider):
             repository=repo_full_name,
         )
 
-    def _comment_to_model(self, comment) -> Comment:
+    def _comment_to_model(self, comment: Any) -> Comment:
         """Convert GitHub comment to model."""
         return Comment(
             id=str(comment.id),

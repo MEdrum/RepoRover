@@ -7,11 +7,14 @@ phases (NEW, AWAITING_REVIEW, STUCK) are implemented as functions that take the
 manager as a context object.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from git_provider import GitProvider, NotFoundError
+from git_provider import GitProvider, NotFoundError, PullRequest
 from orchestrator.errors import classify_exception
 from orchestrator.opencode import OpenCodeTask
 from orchestrator.state import WorkflowPhase, WorkflowState
@@ -25,6 +28,9 @@ from orchestrator.workflow.prompts import (
     verification_decides_tests,
 )
 from orchestrator.workflow.tasks import run_or_poll
+
+if TYPE_CHECKING:
+    from orchestrator.workflow.manager import WorkflowManager
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +59,7 @@ class PhaseSpec:
 
 
 def _verification_next(result: str) -> WorkflowPhase:
+    """Choose WRITE_TESTS or IMPLEMENTING from the report result's token."""
     return WorkflowPhase.WRITE_TESTS if verification_decides_tests(result) == "yes" else WorkflowPhase.IMPLEMENTING
 
 
@@ -93,7 +100,7 @@ PHASE_SPECS: dict[WorkflowPhase, PhaseSpec] = {
 }
 
 
-async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) -> WorkflowResult:
+async def execute_task_phase(manager: WorkflowManager, workflow: WorkflowState, spec: PhaseSpec) -> WorkflowResult:
     """Submit the phase prompt if it has not been submitted yet.
 
     Completion is driven by the agent's report_done/report_stuck signal, so
@@ -126,7 +133,7 @@ async def execute_task_phase(manager, workflow: WorkflowState, spec: PhaseSpec) 
     return WorkflowResult(success=False, pending=True)
 
 
-async def complete_phase_from_report(manager, workflow: WorkflowState, result: str) -> WorkflowResult:
+async def complete_phase_from_report(manager: WorkflowManager, workflow: WorkflowState, result: str) -> WorkflowResult:
     """Advance the state machine on the agent's report_done signal."""
     spec = PHASE_SPECS.get(workflow.phase)
     if spec is None:
@@ -154,7 +161,7 @@ async def complete_phase_from_report(manager, workflow: WorkflowState, result: s
     return WorkflowResult(success=True, next_phase=next_phase)
 
 
-async def mark_stuck(manager, workflow: WorkflowState, description: str) -> WorkflowResult:
+async def mark_stuck(manager: WorkflowManager, workflow: WorkflowState, description: str) -> WorkflowResult:
     """Mark a workflow stuck on the agent's report_stuck signal."""
     workflow.stuck_phase = workflow.phase.value
     workflow.awaiting_agent = False
@@ -191,7 +198,7 @@ async def ensure_branch(provider: GitProvider, owner: str, repo: str, branch: st
 
 async def ensure_pull_request(
     provider: GitProvider, owner: str, repo: str, title: str, body: str, head: str, base: str
-):
+) -> PullRequest:
     """Find or create a PR/MR for the head branch (idempotent)."""
     existing = await provider.list_pull_requests(owner, repo, state="open", head=head)
     for pr in existing:
@@ -208,7 +215,7 @@ async def ensure_pull_request(
     )
 
 
-async def phase_new(manager, workflow: WorkflowState) -> WorkflowResult:
+async def phase_new(manager: WorkflowManager, workflow: WorkflowState) -> WorkflowResult:
     """Initialize a new workflow."""
     provider = await manager._get_provider(workflow.repository)
     in_progress_label = manager.config.git_provider.labels.get("in_progress", "doing")
@@ -238,7 +245,7 @@ async def phase_new(manager, workflow: WorkflowState) -> WorkflowResult:
         )
 
 
-async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowResult:
+async def phase_awaiting_review(manager: WorkflowManager, workflow: WorkflowState) -> WorkflowResult:
     """Create PR/MR and await human review."""
     provider = await manager._get_provider(workflow.repository)
     awaiting_review_label = manager.config.git_provider.labels.get("awaiting_review", "awaiting review")
@@ -272,6 +279,6 @@ async def phase_awaiting_review(manager, workflow: WorkflowState) -> WorkflowRes
         return WorkflowResult(success=False, error=f"Failed to create PR/MR: {e}", error_category=classify_exception(e))
 
 
-async def phase_stuck(manager, workflow: WorkflowState) -> WorkflowResult:
+async def phase_stuck(manager: WorkflowManager, workflow: WorkflowState) -> WorkflowResult:
     """Stuck phase - wait for a human response (handled by the poll loop)."""
     return WorkflowResult(success=False, pending=True)

@@ -23,54 +23,82 @@ class ProviderError(Exception):
     """Base exception for provider errors."""
 
     def __init__(self, message: str, category: str = "unknown", original: Exception | None = None):
+        """Initialize with a message, error category, and optional original exception."""
         super().__init__(message)
         self.category = category
         self.original = original
 
 
 class AuthenticationError(ProviderError):
+    """The provider rejected the configured token."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a authentication-failure error."""
         super().__init__(message, "authentication_failure", original)
 
 
 class PermissionError(ProviderError):
+    """The token lacks the required permission."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a permission-denied error."""
         super().__init__(message, "permission_denied", original)
 
 
 class NotFoundError(ProviderError):
+    """The requested resource does not exist or is hidden."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a not-found error."""
         super().__init__(message, "not_found", original)
 
 
 class RateLimitError(ProviderError):
+    """The provider rate limit was exceeded."""
+
     def __init__(self, message: str, original: Exception | None = None, retry_after: int | None = None):
+        """Initialize a rate-limit error with an optional retry-after delay."""
         super().__init__(message, "rate_limited", original)
         self.retry_after = retry_after
 
 
 class NetworkError(ProviderError):
+    """A network or connection failure occurred."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a network-failure error."""
         super().__init__(message, "network_failure", original)
 
 
 class ValidationError(ProviderError):
+    """The provider rejected the request as invalid."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a validation-failure error."""
         super().__init__(message, "validation_failure", original)
 
 
 class ConflictError(ProviderError):
+    """The operation conflicts with existing provider state."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a conflict error."""
         super().__init__(message, "conflict", original)
 
 
 class TemporaryProviderError(ProviderError):
+    """A transient provider-side failure occurred."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a temporary provider-failure error."""
         super().__init__(message, "temporary_provider_failure", original)
 
 
 class UnsupportedOperationError(ProviderError):
+    """The provider does not support the requested operation."""
+
     def __init__(self, message: str, original: Exception | None = None):
+        """Initialize a unsupported-operation error."""
         super().__init__(message, "unsupported_operation", original)
 
 
@@ -175,6 +203,7 @@ class GitProvider(ABC):
     """Abstract base class for Git providers."""
 
     def __init__(self, config: dict[str, Any]):
+        """Store the provider config; subclasses initialize their SDK client."""
         self.config = config
         self._client = None
 

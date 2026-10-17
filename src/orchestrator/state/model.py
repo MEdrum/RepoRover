@@ -84,10 +84,12 @@ class WorkflowState:
 
 
 def _iso(value: datetime | None) -> str | None:
+    """Serialize a datetime to an ISO-8601 string, or None."""
     return value.isoformat() if value is not None else None
 
 
-def _parse(value) -> datetime | None:
+def _parse(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 string (or datetime) into a timezone-aware datetime."""
     if not value:
         return None
     if isinstance(value, datetime):

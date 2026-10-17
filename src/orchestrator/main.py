@@ -28,6 +28,7 @@ class IssueOrchestrator:
     """Main orchestrator class."""
 
     def __init__(self, config: OrchestratorConfig):
+        """Compose the orchestrator from a validated configuration."""
         self.config = config
         self.state = OrchestratorState(config.state.state_dir, config.state.max_history)
         self.providers = ProviderManager(config)
@@ -36,8 +37,9 @@ class IssueOrchestrator:
         self.opencode = OpenCodeClient(config)
         self._running = False
         self._tasks: list[asyncio.Task] = []
+        self._signal_tasks: list[asyncio.Task] = []
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the orchestrator."""
         logger.info("Starting Issue Orchestrator...")
         self._running = True
@@ -70,7 +72,7 @@ class IssueOrchestrator:
 
         logger.info("Issue Orchestrator started")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the orchestrator gracefully."""
         logger.info("Stopping Issue Orchestrator...")
         self._running = False
@@ -92,7 +94,7 @@ class IssueOrchestrator:
 
         logger.info("Issue Orchestrator stopped")
 
-    async def _discovery_loop(self):
+    async def _discovery_loop(self) -> None:
         """Periodically discover eligible issues."""
         while self._running:
             try:
@@ -107,7 +109,7 @@ class IssueOrchestrator:
             # Wait for next poll interval
             await asyncio.sleep(self.config.git_provider.polling_interval)
 
-    async def _workflow_loop(self):
+    async def _workflow_loop(self) -> None:
         """Process queued workflows."""
         while self._running:
             try:
@@ -118,13 +120,13 @@ class IssueOrchestrator:
             # Small delay to prevent busy loop
             await asyncio.sleep(5)
 
-    async def handle_signal(self, sig):
+    async def handle_signal(self, sig: signal.Signals) -> None:
         """Handle shutdown signals."""
         logger.info(f"Received signal {sig.name}")
         await self.stop()
 
 
-async def main():
+async def main() -> None:
     """Main entry point."""
     # Setup logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -146,7 +148,12 @@ async def main():
     # Setup signal handlers
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(orchestrator.handle_signal(s)))
+
+        def _request_stop(sig: signal.Signals = sig) -> None:
+            """Trigger a graceful shutdown for the given signal."""
+            orchestrator._signal_tasks.append(asyncio.create_task(orchestrator.handle_signal(sig)))
+
+        loop.add_signal_handler(sig, _request_stop)
 
     try:
         await orchestrator.start()

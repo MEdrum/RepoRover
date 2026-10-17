@@ -18,6 +18,7 @@ class IssueDiscovery:
     """Discovers and queues eligible issues."""
 
     def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager | None = None):
+        """Create a discovery that queues eligible issues into the shared state."""
         self.config = config
         self.state = state
         self.providers = providers or ProviderManager(config)

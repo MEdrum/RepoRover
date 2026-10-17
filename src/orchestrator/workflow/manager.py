@@ -35,13 +35,14 @@ class WorkflowManager:
     """Manages workflow processing."""
 
     def __init__(self, config: OrchestratorConfig, state: OrchestratorState, providers: ProviderManager | None = None):
+        """Create a workflow manager over the shared state store."""
         self.config = config
         self.state = state
         self.opencode = OpenCodeClient(config)
         self.session_manager = OpenCodeSessionManager(self.opencode, state)
         self.providers = providers or ProviderManager(config)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close owned HTTP clients."""
         await self.opencode.close()
 

@@ -19,6 +19,7 @@ class RepoRoverMCPServer:
     """Thin MCP wrapper around the WorkflowManager's report tools."""
 
     def __init__(self, manager: WorkflowManager):
+        """Register the report_done / report_stuck tools on the MCP server."""
         self.manager = manager
         self.server = MCPServer(name="RepoRover")
         self.server.add_tool(

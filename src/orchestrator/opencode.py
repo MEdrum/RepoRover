@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 
 from orchestrator.config import OrchestratorConfig
-from orchestrator.state import WorkflowState
+from orchestrator.state import OrchestratorState, WorkflowState
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,7 @@ class OpenCodeClient:
     """HTTP client for the OpenCode session API."""
 
     def __init__(self, config: OrchestratorConfig):
+        """Build a client for the OpenCode session API."""
         self.api_url = config.opencode.api_url.rstrip("/")
         self.timeout = config.opencode.timeout
         password = config.opencode.password
@@ -73,6 +74,7 @@ class OpenCodeClient:
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
+        """Return the shared httpx client, creating it on first use."""
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.api_url,
@@ -81,13 +83,14 @@ class OpenCodeClient:
             )
         return self._client
 
-    async def close(self):
+    async def close(self) -> None:
         """Close HTTP client."""
         if self._client:
             await self._client.aclose()
             self._client = None
 
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Perform an authenticated request to the OpenCode API."""
         client = await self._get_client()
         kwargs.setdefault("headers", {}).update(self._auth_header)
         return await client.request(method, path, **kwargs)
@@ -178,7 +181,8 @@ class OpenCodeSessionManager:
     reads its status for the inactivity watchdog.
     """
 
-    def __init__(self, client: OpenCodeClient, state):
+    def __init__(self, client: OpenCodeClient, state: OrchestratorState):
+        """Manage one OpenCode session per repository."""
         self.client = client
         self.state = state
         self._repo_session: dict[str, str] = {}

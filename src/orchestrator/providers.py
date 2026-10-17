@@ -23,6 +23,7 @@ class ProviderManager:
     """Owns provider adapters and resolves the provider for a repository."""
 
     def __init__(self, config: OrchestratorConfig):
+        """Own provider adapters and cache per-repository routing."""
         self._git_provider_config = config.git_provider
         self._providers: dict[ProviderType, GitProvider] = {}
         self._repo_provider: dict[str, ProviderType] = {}
@@ -36,6 +37,7 @@ class ProviderManager:
         return [ProviderType.GITHUB]
 
     def _provider_config(self, provider_type: ProviderType) -> dict:
+        """Return the config dict passed to create_provider for a provider type."""
         if provider_type == ProviderType.GITHUB:
             return {
                 "token": self._git_provider_config.github_token,
