@@ -109,8 +109,12 @@ impact.
   /session/status and /session/{id}/message, and abort/health endpoints are
   wired into the client.
 - [ ] Define whether a successful workflow means “PR/MR created” or “change
-  merged.” The current code marks the workflow `COMPLETED` immediately after
-  creating a review request and never observes review/merge state.
+  merged.” The workflow is currently marked `COMPLETED` immediately after
+  creating a review request and never observes review/merge state. In the
+  future, observe review comments and reviews on MRs/PRs that RepoRover created
+  (not ones created manually on GitHub): when a new comment or review is added,
+  hand the task back to opencode with the new content as a new turn, so the
+  agent can address the feedback.
 - [ ] Add structured metrics/health reporting for discovery failures, queue
   depth, phase duration, retries, provider rate limits, and OpenCode health.
 
