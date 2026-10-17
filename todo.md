@@ -136,6 +136,13 @@ impact.
   values or environment interpolation in compose files.
 - [ ] Provider capability negotiation so unsupported operations are surfaced
   before a workflow starts.
+- [ ] Ensure a repository is cloned locally before working on its issues: when a
+  repo is found to contain an agent issue, check whether it is already cloned
+  and clone it if not.
+- [ ] When concurrency is greater than 1 and concurrent issues from the same
+  repository are allowed, create a second, third, etc. clone of the repository
+  so changes are performed in separate local working copies (one per concurrent
+  workflow).
 - [ ] Metrics & a RepoRover Dashboard. Collect token usage, cost, and work
   duration per phase and per issue, and surface them (alongside queue depth,
   phase duration, retries, provider rate limits, OpenCode health) in a small
